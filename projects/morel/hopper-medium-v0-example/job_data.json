@@ -1,0 +1,51 @@
+{
+    "env_name": "Hopper-v3",
+    "act_repeat": 1,
+    "num_iter": 500,
+    "eval_rollouts": 4,
+    "num_models": 4,
+    "save_freq": 25,
+    "device": "cuda",
+    "learn_reward": false,
+    "data_file": "datasets/hopper-medium-v0.pickle",
+    "reward_file": "../model_based_npg/utils/reward_functions/gym_hopper.py",
+    "model_file": "hopper-medium-v0-models.pickle",
+    "bc_init": true,
+    "pessimism_coef": 3.0,
+    "truncate_reward": 0.0,
+    "exp_notes": "Example to illustrate MOReL on a D4RL task.",
+    "hidden_size": [
+        512,
+        512
+    ],
+    "activation": "relu",
+    "fit_lr": 0.001,
+    "fit_wd": 0.0,
+    "fit_mb_size": 256,
+    "fit_epochs": 25,
+    "refresh_fit": false,
+    "max_steps": 100000000.0,
+    "policy_size": [
+        64,
+        64
+    ],
+    "step_size": 0.02,
+    "init_log_std": -0.25,
+    "min_log_std": -1.0,
+    "gamma": 0.999,
+    "gae_lambda": 0.97,
+    "update_paths": 50,
+    "start_state": "init",
+    "horizon": 700,
+    "npg_hp": {
+        "FIM_invert_args": {
+            "iters": 20,
+            "damping": 0.001
+        }
+    },
+    "hvp_frac": 1.0,
+    "num_cpu": 1,
+    "base_seed": 123,
+    "truncate_lim": 0.017788833628098168,
+    "seed": 123
+}
