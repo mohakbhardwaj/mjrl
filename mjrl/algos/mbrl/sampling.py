@@ -241,6 +241,10 @@ def evaluate_policy(e, policy, learned_model, noise_level=0.0,
     paths = []
     for ep in range(num_episodes):
         e.reset()
+        try:
+            policy.reset()
+        except:
+            pass
         observations = []
         actions = []
         rewards = []

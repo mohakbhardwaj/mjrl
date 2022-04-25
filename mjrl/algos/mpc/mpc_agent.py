@@ -63,6 +63,7 @@ class MPCAgent():
         self.hotstart = self.mpc_params['hotstart'] 
         self.shift_steps = self.mpc_params['shift_steps'] 
         self.squash_fn = self.mpc_params['squash_fn']
+        self.filter_coeffs = self.mpc_params['filter_coeffs']
 
         assert self.sample_mode in ['mean', 'sample']
 
@@ -119,6 +120,7 @@ class MPCAgent():
     def get_action(self, observation):
         act_seq = self.optimize(torch.as_tensor(observation, device=self.device).float())
         action = act_seq[0]
+        # action = self.env.action_space.sample()
         return action.cpu().numpy()
 
     def optimize(self, observation):
@@ -247,7 +249,23 @@ class MPCAgent():
         delta = self.mvn.sample(self.sample_shape)
         delta = delta.view(delta.shape[0], self.horizon, self.action_dim)
         action_batch = self.mean_action + delta
+        # print('unfiltered actions')
+        # print(action_batch)
+        # input('...')
+        action_batch = self.filter_actions(action_batch)
+        # print('filtered actions')
+        # print(action_batch)
+        # input('...')
         return action_batch
+
+    def filter_actions(self, action_batch):
+        beta_0, beta_1, beta_2 = self.filter_coeffs
+        action_batch[0] = action_batch[0] * (beta_0 + beta_1 + beta_2)
+        action_batch[1] = beta_0 * action_batch[1] + (beta_1 + beta_2) * action_batch[0]
+        for i in range(2, action_batch.shape[0]):
+            action_batch[i] = beta_0*action_batch[i] + beta_1*action_batch[i-1] + beta_2*action_batch[i-2]
+        return action_batch
+
 
     def shift(self, shift_steps):
 
@@ -268,7 +286,6 @@ class MPCAgent():
     def reset_distribution(self):
         self.mean_action = self.init_mean.clone()
         self.cov_action = self.init_cov.clone() 
-
     def reset(self):
         self.reset_distribution()
         self.num_steps = 0

@@ -46,18 +46,19 @@
 # MPC Params
 'mpc_params': {
 'n_iters': 1,
-'horizon': 100,
-'num_particles': 50,
-'init_cov': 1.0,
+'horizon': 10,
+'num_particles': 100,
+'init_cov': 0.1,
 'gamma': 0.999,
-'beta': 0.01,
+'beta': 0.1,
 'td_lam': 0.97,
 'step_size_mean': 0.98,
 'sample_mode': 'mean',
-'base_action': 'random',
+'base_action': 'repeat',
 'hotstart': True,
 'shift_steps': 1,
 'squash_fn': 'clamp',
+'filter_coeffs': [0.6, 0.3, 0.1],
 
 }
 
