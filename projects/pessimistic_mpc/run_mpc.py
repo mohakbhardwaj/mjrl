@@ -169,7 +169,8 @@ else:
 #                        device=job_data['device'])
 
 agent = MPCAgent(env=e, learned_model=models, sampling_policy=policy, mpc_params=mpc_params, 
-                 seed=SEED, save_logs=True, reward_function=reward_function, 
+                 seed=SEED, save_logs=True, reward_function=reward_function,
+                #  reward_function2 = reward_function2, 
                  termination_function=termination_function, device=job_data['device'])
 
 # agent = ModelBasedNPG(learned_model=models, env=e, policy=policy, baseline=baseline, seed=SEED,

@@ -16,6 +16,7 @@ class MPCAgent():
     sampling_policy=None,
     mpc_params=None,
     reward_function=None,
+    # reward_function2=None,
     termination_function=None,
     seed=1234,
     device='cpu',
@@ -38,6 +39,7 @@ class MPCAgent():
         else:
             self.mpc_params = mpc_params
         self.reward_function, self.termination_function = reward_function, termination_function
+        # self.reward_function2 = reward_function2
         self.seed = seed
         self.save_logs = save_logs
 
@@ -187,7 +189,7 @@ class MPCAgent():
         
         #TODO: Right now the reward_function is defined in numpy only. We need to translate it 
         # to torch and compute in batch
-        path = dict(observations=obs.cpu().numpy(), actions=action_batch.cpu().numpy())
+        path = dict(observations=obs, actions=action_batch)
 
         #here we compute rewards and terminations for the paths
 
@@ -197,7 +199,18 @@ class MPCAgent():
         else:
             path = self.reward_function(path)
             # scale by action repeat if necessary
+            # print('rew1')
+            # print(path['rewards'])
+            # path2 = dict(observations=obs.cpu().numpy(),
+            #             actions=action_batch.cpu().numpy())
+            # path2 = self.reward_function2(path2)
+            # print(path2['rewards'])
+
             path["rewards"] = path["rewards"] * self.env.act_repeat
+
+
+
+
         # num_traj, horizon, state_dim = rollouts['observations'].shape
         # for i in range(num_traj):
         #     path = dict()
@@ -205,9 +218,9 @@ class MPCAgent():
         #         path[key] = rollouts[key][i, ...]
         #     paths.append(path)
 
-        path['observations'] = torch.from_numpy(path['observations']).float().to(self.device)
-        path['actions'] = torch.from_numpy(path['actions']).float().to(self.device)
-        path['rewards'] = torch.from_numpy(path['rewards']).float().to(self.device)
+        # path['observations'] = torch.from_numpy(path['observations']).float().to(self.device)
+        # path['actions'] = torch.from_numpy(path['actions']).float().to(self.device)
+        # path['rewards'] = torch.from_numpy(path['rewards']).float().to(self.device)
 
         return path
 
