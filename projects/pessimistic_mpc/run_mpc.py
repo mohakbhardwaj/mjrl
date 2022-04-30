@@ -168,10 +168,6 @@ else:
 # baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=256, epochs=1,  learn_rate=1e-3,
 #                        device=job_data['device'])
 
-agent = MPCAgent(env=e, learned_model=models, sampling_policy=policy, mpc_params=mpc_params, 
-                 seed=SEED, save_logs=True, reward_function=reward_function,
-                #  reward_function2 = reward_function2, 
-                 termination_function=termination_function, device=job_data['device'])
 
 # agent = ModelBasedNPG(learned_model=models, env=e, policy=policy, baseline=baseline, seed=SEED,
 #                       normalized_step_size=job_data['step_size'], save_logs=True,
@@ -255,17 +251,23 @@ with open(EXP_FILE, 'w') as f:
     json.dump(job_data, f, indent=4)
     del(job_data['seed'])
 
+
+agent = MPCAgent(env=e, learned_model=models, sampling_policy=policy, mpc_params=mpc_params,
+                 seed=SEED, save_logs=True, reward_function=reward_function,
+                 #  reward_function2 = reward_function2,
+                 termination_function=termination_function, termination_function2=termination_function2,
+                 truncate_lim=job_data['truncate_lim'], truncate_reward=job_data['truncate_reward'],
+                 device=job_data['device'])
 # ===============================================================================
 # Behavior Cloning Initialization
 # ===============================================================================
-# Mohak - Commenting for now while debugging MPC
-# if 'bc_init' in job_data.keys():
-#     if job_data['bc_init']:
-#         from mjrl.algos.behavior_cloning import BC
-#         print('Training behavior cloning')
-#         policy.to(job_data['device'])
-#         bc_agent = BC(paths, policy, epochs=5, batch_size=256, loss_type='MSE')
-#         bc_agent.train()
+if 'bc_init' in job_data.keys():
+    if job_data['bc_init']:
+        from mjrl.algos.behavior_cloning import BC
+        print('Training behavior cloning')
+        policy.to(job_data['device'])
+        bc_agent = BC(paths, policy, epochs=5, batch_size=256, loss_type='MSE') #epochs=5
+        bc_agent.train()
 
 # ===============================================================================
 # Policy Optimization Loop

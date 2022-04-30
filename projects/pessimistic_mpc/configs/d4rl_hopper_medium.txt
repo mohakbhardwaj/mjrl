@@ -16,7 +16,7 @@
 'model_file'    :   '../morel/hopper-medium-v0-models.pickle',
 'bc_init'       :   True,
 'pessimism_coef':   3.0,
-'truncate_reward' : 0.0,
+'truncate_reward' : .0,
 'exp_notes'     :   'Example to illustrate MOReL on a D4RL task.',
 
 # dynamics learning
@@ -46,19 +46,20 @@
 # MPC Params
 'mpc_params': {
 'n_iters': 1,
-'horizon': 10,
+'horizon': 5,
 'num_particles': 100,
-'init_cov': 0.1,
+'init_cov': 0.0001,
 'gamma': 0.999,
-'beta': 0.1,
+'beta': 3.33,
+'mixing_factor': 0.9,
 'td_lam': 0.97,
-'step_size_mean': 0.98,
+'step_size_mean': 1.0,
 'sample_mode': 'mean',
 'base_action': 'repeat',
 'hotstart': True,
 'shift_steps': 1,
 'squash_fn': 'clamp',
-'filter_coeffs': [0.6, 0.3, 0.1],
+'filter_coeffs': [0.6, 0.4, 0.0],
 
 }
 
