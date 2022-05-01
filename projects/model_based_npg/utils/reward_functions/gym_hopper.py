@@ -19,7 +19,8 @@ def reward_function(paths):
     ang = obs[:, :, 1]
     alive_bonus = 1.0 * (height > 0.7) * (torch.abs(ang) <= 0.2)
     rewards = vel_x + alive_bonus - 1e-3*power
-    paths["rewards"] = rewards if rewards.shape[0] > 1 else rewards.ravel()
+    paths["rewards"] = rewards #if rewards.shape[0] > 1 else rewards.ravel()
+
     return paths
 
 def reward_function2(paths):

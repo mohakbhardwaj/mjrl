@@ -266,8 +266,26 @@ if 'bc_init' in job_data.keys():
         from mjrl.algos.behavior_cloning import BC
         print('Training behavior cloning')
         policy.to(job_data['device'])
-        bc_agent = BC(paths, policy, epochs=5, batch_size=256, loss_type='MSE') #epochs=5
+        bc_agent = BC(paths, policy, epochs=job_data['bc_epochs'], batch_size=job_data['bc_batch_size'], lr=job_data['bc_lr'], loss_type='MSE') #epochs=5
         bc_agent.train()
+
+if job_data['eval_rollouts'] > 0:
+    print("Performing validation rollouts for BC policy ... ")
+    # set the policy device back to CPU for env sampling
+    eval_paths = evaluate_policy(agent.env, agent.sampling_policy, agent.learned_model[0], noise_level=0.0,
+                                    real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
+    eval_score_bc = np.mean([np.sum(p['rewards']) for p in eval_paths])
+    print(eval_score_bc)
+    logger.log_kv('eval_score_bc', eval_score_bc)
+    # try:
+    #     eval_metric_bc = e.env.env.evaluate_success(eval_paths)
+    #     logger.log_kv('eval_metric_bc', eval_metric_bc)
+    # except:
+    #     pass
+else:
+    eval_score_bc = 1e-8
+
+print(tabulate(logger.get_current_log_print().items()))
 
 # ===============================================================================
 # Policy Optimization Loop
@@ -313,6 +331,7 @@ for outer_iter in range(job_data['num_iter']):
         eval_paths = evaluate_policy(agent.env, agent, agent.learned_model[0], noise_level=0.0,
                                      real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
         eval_score = np.mean([np.sum(p['rewards']) for p in eval_paths])
+        print(eval_score)
         logger.log_kv('eval_score', eval_score)
         try:
             eval_metric = e.env.env.evaluate_success(eval_paths)

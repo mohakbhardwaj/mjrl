@@ -1,8 +1,8 @@
 {
     "env_name": "Hopper-v3",
     "act_repeat": 1,
-    "num_iter": 500,
-    "eval_rollouts": 4,
+    "num_iter": 2,
+    "eval_rollouts": 30,
     "num_models": 4,
     "save_freq": 25,
     "device": "cuda",
@@ -14,6 +14,9 @@
     "pessimism_coef": 3.0,
     "truncate_reward": 0.0,
     "exp_notes": "Example to illustrate MOReL on a D4RL task.",
+    "bc_epochs": 15,
+    "bc_batch_size": 256,
+    "bc_lr": 0.001,
     "hidden_size": [
         512,
         512
@@ -45,22 +48,22 @@
     },
     "mpc_params": {
         "n_iters": 1,
-        "horizon": 5,
+        "horizon": 10,
         "num_particles": 100,
         "init_cov": 0.0001,
         "gamma": 0.999,
         "beta": 3.33,
-        "mixing_factor": 0.9,
+        "mixing_factor": 0.8,
         "td_lam": 0.97,
         "step_size_mean": 1.0,
-        "sample_mode": "mean",
+        "sample_mode": "best_mean",
         "base_action": "repeat",
         "hotstart": true,
         "shift_steps": 1,
         "squash_fn": "clamp",
         "filter_coeffs": [
-            0.6,
-            0.4,
+            0.8,
+            0.2,
             0.0
         ]
     },
