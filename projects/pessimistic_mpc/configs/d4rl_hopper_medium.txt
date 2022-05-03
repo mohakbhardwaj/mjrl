@@ -16,11 +16,11 @@
 'model_file'    :   '../morel/hopper-medium-v0-models.pickle',
 'bc_init'       :   True,
 'pessimism_coef':   3.0,
-'truncate_reward' : .0,
+'truncate_reward' : 0.0,
 'exp_notes'     :   'Example to illustrate MOReL on a D4RL task.',
 
 #behavior cloning
-'bc_epochs': 15,
+'bc_epochs': 10,
 'bc_batch_size': 256,
 'bc_lr': 1e-3,
 
@@ -62,7 +62,7 @@
 'sample_mode': 'best_mean',
 'base_action': 'repeat',
 'hotstart': True,
-'shift_steps': 1,
+'shift_steps': 2,
 'squash_fn': 'clamp',
 'filter_coeffs': [0.8, 0.2, 0.0],
 

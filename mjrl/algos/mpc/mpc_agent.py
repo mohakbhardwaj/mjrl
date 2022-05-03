@@ -161,10 +161,10 @@ class MPCAgent():
                 if self.check_convergence():
                     break
 
-        self.trajectories = paths
-        curr_action_seq = self.get_action_seq(observation, mode=self.sample_mode)
-        #calculate optimal value estimate if required
-        # info['entropy'].append(self.entropy)
+        # self.trajectories = paths
+            curr_action_seq = self.get_action_seq(observation, mode=self.sample_mode)
+            #calculate optimal value estimate if required
+            # info['entropy'].append(self.entropy)
 
         self.num_steps += 1
 
@@ -185,6 +185,13 @@ class MPCAgent():
             act_seq = self.mean_action[rand_idx]
         elif mode == 'average_mean':
             act_seq = torch.mean(self.mean_action, dim=0)
+        elif mode == 'softmax_mean':
+            returns = self.evaluate_act_sequences(
+                observation, self.mean_action.unsqueeze(1))
+            weights = torch.softmax((1.0 / self.beta) *  returns, dim=0)
+            weighted_mean = (weights.T * self.mean_action.T).T
+            act_seq = torch.sum(weighted_mean, dim=0).clone()
+
         elif mode == 'best_mean_sample':
             raise ValueError('To be implemented')
         elif mode == 'random_mean_sample':
@@ -537,15 +544,14 @@ class MPCAgent():
 
     def shift(self, shift_steps):
         self.mean_action = self.mean_action.roll(-shift_steps, 1)
-
         if self.base_action == 'random':
             # self.mean_action[-1] = self.generate_noise(shape=torch.Size((1, 1)),
             #                                            base_seed=self.seed_val + 123*self.num_steps)
-            self.mean_action[-1] = self.action_range * torch.rand(self.action_dim, device=self.device) + self.action_lows
+            self.mean_action[:,-shift_steps:] = self.action_range * torch.rand(self.num_models, shift_steps, self.action_dim, device=self.device) + self.action_lows
         elif self.base_action == 'null':
-            self.mean_action[-shift_steps:].zero_()
+            self.mean_action[:,-shift_steps:].zero_()
         elif self.base_action == 'repeat':
-            self.mean_action[-shift_steps:] = self.mean_action[-shift_steps - 1].clone()
+            self.mean_action[:,-shift_steps:] = self.mean_action[:, -shift_steps - 1].unsqueeze(1).repeat(1,shift_steps,1)#clone()        
         else:
             raise NotImplementedError(
                 "invalid option for base action during shift")
