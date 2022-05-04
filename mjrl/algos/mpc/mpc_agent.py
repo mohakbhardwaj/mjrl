@@ -132,10 +132,11 @@ class MPCAgent():
 
     def get_action(self, observation):
         act_seq = self.optimize(torch.as_tensor(observation, device=self.device).float())
-        if self.optimize_open_loop:
-            a_policy, _ = self.sample_actions_policy(observation)
-            action = (1.0 - self.mixing_factor) * a_policy + self.mixing_factor * act_seq[0]
-        else: action = act_seq[0]
+        # if self.optimize_open_loop:
+        #     a_policy, _ = self.sample_actions_policy(observation)
+        #     action = (1.0 - self.mixing_factor) * a_policy + self.mixing_factor * act_seq[0]
+        # else: action = act_seq[0]
+        action = act_seq[0]
         return action.cpu().numpy()
 
     def optimize(self, observation):
@@ -170,15 +171,15 @@ class MPCAgent():
 
     def get_action_seq(self, observation, mode='mean'):
         if mode == 'best_mean':
-            returns = self.rollout_actions(observation, self.mean_action.unsqueeze(
-                1), sample_cl_actions=self.optimize_open_loop)['discounted_return']
-            best_idx = torch.argmax(returns)
-            act_seq = self.mean_action[best_idx].clone()
+            paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
+                1), sample_cl_actions=self.optimize_open_loop)
+            best_idx = torch.argmax(paths['discounted_return'])
+            act_seq = paths["actions"][best_idx].squeeze(1) #self.mean_action[best_idx].clone()
         elif mode == 'worst_mean':
-            returns = self.rollout_actions(observation, self.mean_action.unsqueeze(
-            ), sample_cl_actions=self.optimize_open_loop)['discounted_return']
-            worst_idx = torch.argmin(returns)
-            act_seq = self.mean_action[worst_idx].clone()
+            paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
+            ), sample_cl_actions=self.optimize_open_loop)
+            worst_idx = torch.argmin(paths['discounted_return'])
+            act_seq = paths["actions"][worst_idx].squeeze(1) #self.mean_action[worst_idx].clone()
         elif mode == 'random_mean':
             rand_idx = np.random.randint(self.num_models)
             act_seq = self.mean_action[rand_idx]
@@ -548,3 +549,4 @@ class MPCAgent():
     #     if self.save_logs:
     #         self.logger.log_kv('time_mean_evaluation', timer.time() - ts)
     #     return paths["discounted_return"]
+ 
