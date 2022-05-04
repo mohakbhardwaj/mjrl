@@ -52,9 +52,9 @@ class EnsembleLinear(nn.Module):
                 nn.init.uniform_(b, -bound, bound)
 
     def forward(self, input: Tensor) -> Tensor:
-        if len(input.shape) == 2:
-            input = input.repeat(self.ensemble_size, 1, 1)  # ensemble x batch x dim
-        return torch.baddbmm(self.biases.unsqueeze(1), input, self.weights.transpose(1,2))
+        if len(input.shape) == 2: # batch x dim
+            input = input.repeat(self.ensemble_size, 1, 1)  # ensemble x batch x in_features
+        return torch.baddbmm(self.biases.unsqueeze(1), input, self.weights.transpose(1,2))  # ensemble x batch x out_features
 
     def extra_repr(self) -> str:
         return 'ensemble_size = {}, in_features={}, out_features={}, biases={}'.format(
@@ -90,12 +90,15 @@ class EnsembleWorldModel(WorldModel):
 
     def compute_delta(self, *args):  # this is a numpy method
         B = args[0].shape[0]  # batch
-        preds = self.forward(*args)
+        preds = self.forward(*args) # Bxd, Bxd -> ExBxd
         delta = torch.zeros(B, device=self.device)
         for i in range(self.ensemble_size):
             for j in range(i+1,self.ensemble_size):
                 delta = torch.maximum(delta, torch.norm(preds[i]-preds[j], dim=1))
         return delta
+
+    def __len__(self):
+        return self.ensemble_size
 
 class EnsembleDynamicsNet(DynamicsNet):
 
@@ -124,7 +127,6 @@ class EnsembleDynamicsNet(DynamicsNet):
             s = s.repeat(self.ensemble_size, 1, 1)  # ensemble x batch x dim
             a = a.repeat(self.ensemble_size, 1, 1)  # ensemble x batch x dim
         return super().forward(s, a)
-        return out
 
     def set_params_from_list(self, new_params_list):
         for idx, p in enumerate(self.parameters()):
@@ -134,3 +136,6 @@ class EnsembleDynamicsNet(DynamicsNet):
         for k in self.transformations:
             self.transformations[k] =  torch.stack([new_params['transforms'][k] for new_params in  new_params_list ])
         self.set_transformations(**self.transformations)
+
+    def __len__(self):
+        return self.ensemble_size

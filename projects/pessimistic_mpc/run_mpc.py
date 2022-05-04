@@ -29,6 +29,7 @@ import numpy as np
 from os import environ
 environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
 environ['MKL_THREADING_LAYER'] = 'GNU'
+from mjrl.algos.mpc.ensemble_nn_dynamics import batch_call
 
 # ===============================================================================
 # Get command line arguments
@@ -220,18 +221,29 @@ pickle.dump(models, open(OUT_DIR + '/models.pickle', 'wb'))
 # log action repeat for completeness
 logger.log_kv('act_repeat', job_data['act_repeat'])
 
+
+# NOTE Currently, it only supports loading pretrained models.
+from mjrl.algos.mpc.ensemble_nn_dynamics import EnsembleWorldModel
+ensemble_model = EnsembleWorldModel(ensemble_size=len(models), state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED, **job_data)
+ensemble_model.set_dynamics_from_list(models)
+
+
 # ===============================================================================
 # Pessimistic MDP parameters
 # ===============================================================================
 
-delta = np.zeros(s.shape[0])
-for idx_1, model_1 in enumerate(models):
-    pred_1 = model_1.predict(s, a)
-    for idx_2, model_2 in enumerate(models):
-        if idx_2 > idx_1:
-            pred_2 = model_2.predict(s, a)
-            disagreement = np.linalg.norm((pred_1-pred_2), axis=-1)
-            delta = np.maximum(delta, disagreement)
+with torch.no_grad():
+    deltas = batch_call(ensemble_model.compute_delta, s,a)
+    delta = np.concatenate([ d.to('cpu').numpy() for d in deltas])
+
+# delta = np.zeros(s.shape[0])
+# for idx_1, model_1 in enumerate(models):
+#     pred_1 = model_1.predict(s, a)
+#     for idx_2, model_2 in enumerate(models):
+#         if idx_2 > idx_1:
+#             pred_2 = model_2.predict(s, a)
+#             disagreement = np.linalg.norm((pred_1-pred_2), axis=-1)
+#             delta = np.maximum(delta, disagreement)
 
 if 'pessimism_coef' in job_data.keys():
     if job_data['pessimism_coef'] is None or job_data['pessimism_coef'] == 0.0:
@@ -252,7 +264,38 @@ with open(EXP_FILE, 'w') as f:
     del(job_data['seed'])
 
 
-agent = MPCAgent(env=e, learned_model=models, sampling_policy=policy, mpc_params=mpc_params,
+#### ## Some test code of speed
+#### import time
+#### from mjrl.algos.mpc.ensemble_nn_dynamics import batch_call
+###
+#### size =1000
+#### s = s[:size]
+#### a = a[:size]
+#### t0 = time.time()
+#### for _ in range(100):
+####     with torch.no_grad():
+####         pred_new = np.concatenate(batch_call(ensemble_model.predict, s,a), axis=1)
+####         deltas = batch_call(ensemble_model.compute_delta, s,a)
+####         delta_new = np.concatenate([ d.to('cpu').numpy() for d in deltas])
+###
+#### print(time.time() - t0)
+#### t0 = time.time()
+#### for _ in range(100):
+####     o_pred = np.stack([ model.predict(s,a)for model in models])
+###
+####     delta = np.zeros(s.shape[0])
+####     for idx_1, model_1 in enumerate(models):
+####         pred_1 = model_1.predict(s, a)
+####         for idx_2, model_2 in enumerate(models):
+####             if idx_2 > idx_1:
+####                 pred_2 = model_2.predict(s, a)
+####                 disagreement = np.linalg.norm((pred_1-pred_2), axis=-1)
+####                 delta = np.maximum(delta, disagreement)
+#### print(time.time() - t0)
+#### print(np.max(np.abs(pred_new-o_pred)), np.max(np.abs(delta-delta_new)) )
+#### import pdb; pdb.set_trace()
+
+agent = MPCAgent(env=e, learned_model=ensemble_model, sampling_policy=policy, mpc_params=mpc_params,
                  seed=SEED, save_logs=True, reward_function=reward_function,
                  #  reward_function2 = reward_function2,
                  termination_function=termination_function, termination_function2=termination_function2,
@@ -272,8 +315,8 @@ if 'bc_init' in job_data.keys():
 if job_data['eval_rollouts'] > 0:
     print("Performing validation rollouts for BC policy ... ")
     # set the policy device back to CPU for env sampling
-    eval_paths = evaluate_policy(agent.env, agent.sampling_policy, agent.learned_model[0], noise_level=0.0,
-                                    real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
+    eval_paths = evaluate_policy(agent.env, agent.sampling_policy, None, noise_level=0.0,
+                                 real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
     eval_score_bc = np.mean([np.sum(p['rewards']) for p in eval_paths])
     print(eval_score_bc)
     logger.log_kv('eval_score_bc', eval_score_bc)
@@ -328,7 +371,7 @@ for outer_iter in range(job_data['num_iter']):
     if job_data['eval_rollouts'] > 0:
         print("Performing validation rollouts ... ")
         # set the policy device back to CPU for env sampling
-        eval_paths = evaluate_policy(agent.env, agent, agent.learned_model[0], noise_level=0.0,
+        eval_paths = evaluate_policy(agent.env, agent, None, noise_level=0.0,
                                      real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
         eval_score = np.mean([np.sum(p['rewards']) for p in eval_paths])
         print(eval_score)
