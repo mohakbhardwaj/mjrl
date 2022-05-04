@@ -53,7 +53,7 @@
         "init_cov": 0.0001,
         "gamma": 0.999,
         "beta": 3.33,
-        "mixing_factor": 0.8,
+        "mixing_factor": 0.1,
         "td_lam": 0.97,
         "step_size_mean": 1.0,
         "sample_mode": "best_mean",
@@ -61,6 +61,7 @@
         "hotstart": true,
         "shift_steps": 2,
         "squash_fn": "clamp",
+        "optimize_open_loop": true,
         "filter_coeffs": [
             0.8,
             0.2,
