@@ -84,7 +84,7 @@ class WorldModel:
         loss = self.dynamics_loss(sp, s_next)
         return loss.to('cpu').data.numpy()
 
-    def fit_dynamics(self, s, a, sp, fit_mb_size, fit_epochs, max_steps=1e4, 
+    def fit_dynamics(self, s, a, sp, fit_mb_size, fit_epochs, max_steps=1e4,
                      set_transformations=True, *args, **kwargs):
         # move data to correct devices
         assert type(s) == type(a) == type(sp)
@@ -94,7 +94,7 @@ class WorldModel:
             a = torch.from_numpy(a).float()
             sp = torch.from_numpy(sp).float()
         s = s.to(self.device); a = a.to(self.device); sp = sp.to(self.device)
-       
+
         # set network transformations
         if set_transformations:
             s_shift, a_shift = torch.mean(s, dim=0), torch.mean(a, dim=0)
@@ -104,7 +104,7 @@ class WorldModel:
             self.dynamics_net.set_transformations(s_shift, s_scale, a_shift, a_scale, out_shift, out_scale)
 
         # prepare dataf for learning
-        if self.dynamics_net.residual:  
+        if self.dynamics_net.residual:
             X = (s, a) ; Y = (sp - s - out_shift) / (out_scale + 1e-8)
         else:
             X = (s, a) ; Y = (sp - out_shift) / (out_scale + 1e-8)
@@ -115,7 +115,7 @@ class WorldModel:
         self.dynamics_net._apply_out_transforms = True
         return return_vals
 
-    def fit_reward(self, s, a, r, fit_mb_size, fit_epochs, max_steps=1e4, 
+    def fit_reward(self, s, a, r, fit_mb_size, fit_epochs, max_steps=1e4,
                    set_transformations=True, *args, **kwargs):
         if not self.learn_reward:
             print("Reward model was not initialized to be learnable. Use the reward function from env.")
@@ -130,7 +130,7 @@ class WorldModel:
             a = torch.from_numpy(a).float()
             r = torch.from_numpy(r).float()
         s = s.to(self.device); a = a.to(self.device); r = r.to(self.device)
-       
+
         # set network transformations
         if set_transformations:
             s_shift, a_shift = torch.mean(s, dim=0), torch.mean(a, dim=0)
@@ -151,7 +151,7 @@ class WorldModel:
         # paths has two keys: observations and actions
         # paths["observations"] : (num_traj, horizon, obs_dim)
         # paths["rewards"] should have shape (num_traj, horizon)
-        if not self.learn_reward: 
+        if not self.learn_reward:
             print("Reward model is not learned. Use the reward function from env.")
             return None
         s, a = paths['observations'], paths['actions']
@@ -247,21 +247,22 @@ class DynamicsNet(nn.Module):
 
     def get_params(self):
         network_weights = [p.data for p in self.parameters()]
-        transforms = (self.s_shift, self.s_scale,
-                      self.a_shift, self.a_scale,
-                      self.out_shift, self.out_scale)
+        # transforms = (self.s_shift, self.s_scale,
+        #               self.a_shift, self.a_scale,
+        #               self.out_shift, self.out_scale)
+        transforms = self.transformations
         return dict(weights=network_weights, transforms=transforms)
 
     def set_params(self, new_params):
         new_weights = new_params['weights']
-        s_shift, s_scale, a_shift, a_scale, out_shift, out_scale = new_params['transforms']
+        # s_shift, s_scale, a_shift, a_scale, out_shift, out_scale = new_params['transforms']
         for idx, p in enumerate(self.parameters()):
             p.data = new_weights[idx]
-        self.set_transformations(s_shift, s_scale, a_shift, a_scale, out_shift, out_scale)
-
+        # self.set_transformations(s_shift, s_scale, a_shift, a_scale, out_shift, out_scale)
+        self.set_transformations(**new_params['transforms'])
 
 class RewardNet(nn.Module):
-    def __init__(self, state_dim, act_dim, 
+    def __init__(self, state_dim, act_dim,
                  hidden_size=(64,64),
                  s_shift = None,
                  s_scale = None,
@@ -287,7 +288,7 @@ class RewardNet(nn.Module):
             self.s_shift, self.s_scale       = torch.zeros(self.state_dim), torch.ones(self.state_dim)
             self.a_shift, self.a_scale       = torch.zeros(self.act_dim), torch.ones(self.act_dim)
             self.sp_shift, self.sp_scale     = torch.zeros(self.state_dim), torch.ones(self.state_dim)
-            self.out_shift, self.out_scale   = 0.0, 1.0 
+            self.out_shift, self.out_scale   = 0.0, 1.0
         elif type(s_shift) == torch.Tensor:
             self.s_shift, self.s_scale       = s_shift, s_scale
             self.a_shift, self.a_scale       = a_shift, a_scale
