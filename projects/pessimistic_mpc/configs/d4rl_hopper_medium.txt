@@ -14,15 +14,16 @@
 'data_file'     :   '../morel/datasets/hopper-medium-v0.pickle',
 'reward_file'   :   '../model_based_npg/utils/reward_functions/gym_hopper.py',
 'model_file'    :   '../morel/hopper-medium-v0-models.pickle',
-'bc_init'       :   True,
+'init_policy'   :   './hopper-medium-v0-example/bc_policy.pickle',
 'pessimism_coef':   3.0,
 'truncate_reward' : 0.0,
 'exp_notes'     :   'Example to illustrate MOReL on a D4RL task.',
 
 #behavior cloning
-'bc_epochs': 10,
-'bc_batch_size': 256,
-'bc_lr': 1e-3,
+'bc_init'       : False,
+'bc_epochs'     : 10,
+'bc_batch_size' : 256,
+'bc_lr'         : 1e-3,
 
 # dynamics learning
 

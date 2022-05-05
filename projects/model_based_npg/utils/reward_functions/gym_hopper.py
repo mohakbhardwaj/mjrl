@@ -8,15 +8,15 @@ obs_mask = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02
 
 def reward_function(paths):
     # path has two keys: observations and actions
-    # path["observations"] : (num_traj, horizon, obs_dim)
+    # path["observations"] : (num_models, num_traj, horizon, obs_dim)
     # return paths that contain rewards in path["rewards"]
-    # path["rewards"] should have shape (num_traj, horizon)
+    # path["rewards"] should have shape (num_models, num_traj, horizon)
     obs = torch.clip(paths["observations"], -10.0, 10.0)
     act = paths["actions"].clip(-1.0, 1.0)
-    vel_x = obs[:, :, -6] / 0.02
+    vel_x = obs[:, :, :, -6] / 0.02
     power = torch.square(act).sum(axis=-1)
-    height = obs[:, :, 0]
-    ang = obs[:, :, 1]
+    height = obs[:, :, :, 0]
+    ang = obs[:, :, :, 1]
     alive_bonus = 1.0 * (height > 0.7) * (torch.abs(ang) <= 0.2)
     rewards = vel_x + alive_bonus - 1e-3*power
     paths["rewards"] = rewards #if rewards.shape[0] > 1 else rewards.ravel()

@@ -91,6 +91,11 @@ class MPCAgent():
         #     covariance_matrix=self.init_cov * torch.eye(self.horizon * self.action_dim))
         self.sample_shape = torch.Size([self.num_particles])
         self.num_steps = 0
+        self.obs_buff = torch.zeros(self.num_models, self.num_particles, self.horizon, self.observation_dim)
+        self.act_buff = torch.zeros(self.num_models, self.num_particles, self.horizon, self.action_dim)
+        self.obs_buff2 = torch.zeros(self.num_models, 1, self.horizon, self.observation_dim)
+        self.act_buff2 = torch.zeros(self.num_models, 1, self.horizon, self.action_dim)
+
         self.to(device)
         if save_logs: self.logger = DataLog()
 
@@ -119,6 +124,8 @@ class MPCAgent():
             loc=torch.zeros(self.horizon * self.action_dim, device=device),
             covariance_matrix=self.init_cov * torch.eye(self.horizon * self.action_dim, device=device))
         self.sampling_policy.to(device)
+        self.obs_buff, self.act_buff = self.obs_buff.to(device), self.act_buff.to(device)
+        self.obs_buff2, self.act_buff2 = self.obs_buff2.to(device), self.act_buff2.to(device)
         self.device = device
 
     def is_cuda(self):
@@ -134,10 +141,6 @@ class MPCAgent():
 
     def get_action(self, observation):
         act_seq = self.optimize(torch.as_tensor(observation, device=self.device).float())
-        # if self.optimize_open_loop:
-        #     a_policy, _ = self.sample_actions_policy(observation)
-        #     action = (1.0 - self.mixing_factor) * a_policy + self.mixing_factor * act_seq[0]
-        # else: action = act_seq[0]
         action = act_seq[0]
         return action.cpu().numpy()
 
@@ -174,25 +177,28 @@ class MPCAgent():
     def get_action_seq(self, observation, mode='mean'):
         if mode == 'best_mean':
             paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
-                1), sample_cl_actions=self.optimize_open_loop)
+                1), sample_cl_actions=self.optimize_open_loop,
+                obs_buff=self.obs_buff2, act_buff=self.act_buff2)
             best_idx = torch.argmax(paths['discounted_return'])
-            act_seq = paths["actions"][best_idx].squeeze(1) #self.mean_action[best_idx].clone()
+            act_seq = paths["actions"][best_idx].squeeze(0) #self.mean_action[best_idx].clone()
         elif mode == 'worst_mean':
             paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
-            ), sample_cl_actions=self.optimize_open_loop)
+            ), sample_cl_actions=self.optimize_open_loop,
+            obs_buff=self.obs_buff2, act_buff=self.act_buff2)
             worst_idx = torch.argmin(paths['discounted_return'])
-            act_seq = paths["actions"][worst_idx].squeeze(1) #self.mean_action[worst_idx].clone()
+            act_seq = paths["actions"][worst_idx].squeeze(0) #self.mean_action[worst_idx].clone()
+        elif mode == 'softmax_mean':
+            paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
+                1), sample_cl_actions=self.optimize_open_loop,
+                obs_buff=self.obs_buff2, act_buff=self.act_buff2)
+            weights = torch.softmax((1.0 / self.beta) *  returns, dim=0)
+            weighted_mean = (weights.T * self.mean_action.T).T
+            act_seq = torch.sum(weighted_mean, dim=0).clone()
         elif mode == 'random_mean':
             rand_idx = np.random.randint(self.num_models)
             act_seq = self.mean_action[rand_idx]
         elif mode == 'average_mean':
             act_seq = torch.mean(self.mean_action, dim=0)
-        elif mode == 'softmax_mean':
-            returns = self.rollout_actions(observation, self.mean_action.unsqueeze(
-                1), sample_cl_actions=self.optimize_open_loop)['discounted_return']
-            weights = torch.softmax((1.0 / self.beta) *  returns, dim=0)
-            weighted_mean = (weights.T * self.mean_action.T).T
-            act_seq = torch.sum(weighted_mean, dim=0).clone()
 
         elif mode == 'best_mean_sample':
             raise ValueError('To be implemented')
@@ -207,18 +213,22 @@ class MPCAgent():
 
     def generate_rollouts(self, observation):
         open_loop_actions = self.sample_actions_batch()
-        paths = self.rollout_actions(observation, open_loop_actions, sample_cl_actions=True)  # , action_batch)
+        paths = self.rollout_actions(observation, open_loop_actions, sample_cl_actions=True,
+        obs_buff=self.obs_buff, act_buff=self.act_buff)  # , action_batch)
         return paths
 
-    def rollout_actions(self, start_obs, open_loop_actions, sample_cl_actions=True): # , action_batch):
+    def rollout_actions(self, start_obs, open_loop_actions, sample_cl_actions=True, obs_buff=None, act_buff=None): # , action_batch):
         # open_loop_actions # model x particles x horizon x dim
         ts = timer.time()
         num_models, num_particles, horizon, _ = open_loop_actions.shape
 
+
         #sample open-loop actions using current means
         rollouts = []
-        obs = torch.zeros(num_models, num_particles, horizon, self.observation_dim, device=self.device)
-        act = torch.zeros(num_models, num_particles, horizon, self.action_dim, device=self.device)
+        if obs_buff is None:
+            obs_buff = torch.zeros(num_models, num_particles, horizon, self.observation_dim, device=self.device)
+        if act_buff is None:
+            act_buff = torch.zeros(num_models, num_particles, horizon, self.action_dim, device=self.device)
 
         # st = start_obs.clone().unsqueeze(0).repeat(num_particles, 1)
         st = start_obs.view(1,1,-1).repeat(num_models, num_particles, 1)  # model x particles x dim
@@ -232,27 +242,32 @@ class MPCAgent():
             else:
                 at = a_ol
             stp1 = self.learned_model.forward(st, at) # model x particles x dim
-            obs[:,:, t,:] = st  # model x particles x horizon x dim
-            act[:,:, t,:] = at  # model x particles x horizon x dim
+            obs_buff[:,:, t,:] = st  # model x particles x horizon x dim
+            act_buff[:,:, t,:] = at  # model x particles x horizon x dim
             st = stp1
 
-        model_rollouts = dict(observations=obs.view(-1,horizon,self.observation_dim),
-                              actions=act.view(-1,horizon,self.action_dim),
-                              open_loop_actions=open_loop_actions.view(-1,horizon,self.action_dim))
+        # model_rollouts = dict(observations=obs.view(-1,horizon,self.observation_dim),
+        #                       actions=act.view(-1,horizon,self.action_dim),
+        #                       open_loop_actions=open_loop_actions.view(-1,horizon,self.action_dim))
+        paths = dict(observations=obs_buff,
+                     actions=act_buff,
+                     open_loop_actions=open_loop_actions)
+
+
 
         #here we compute rewards and terminations for the paths
         # use learned reward function if available
         if self.learned_model.learn_reward:
-            self.learned_model.compute_path_rewards(model_rollouts)
+            self.learned_model.compute_path_rewards(paths)
         else:
-            model_rollouts = self.reward_function(model_rollouts)
-            model_rollouts["rewards"] = model_rollouts["rewards"] * self.env.act_repeat
+            paths = self.reward_function(paths)
+            paths["rewards"] = paths["rewards"] * self.env.act_repeat
 
-        paths = dict()
-        for k in model_rollouts:
-            shape = list(model_rollouts[k].shape)
-            shape = [num_models, num_particles] + shape[1:]
-            paths[k] = model_rollouts[k].view(*shape)
+        # paths = dict()
+        # for k in model_rollouts:
+        #     shape = list(model_rollouts[k].shape)
+        #     shape = [num_models, num_particles] + shape[1:]
+        #     paths[k] = model_rollouts[k].view(*shape)
 
 
         if callable(self.termination_function):
@@ -274,10 +289,11 @@ class MPCAgent():
             #                 (pred_1 - pred_2), dim=-1, p=2)
             #             pred_err = torch.maximum(pred_err, model_err)
             pred_err = self.learned_model.compute_delta(
-                            model_rollouts['observations'].view(-1, self.observation_dim), # model*particles*horizon x dim
-                            model_rollouts['actions'].view(-1, self.action_dim)) # model*particles*horizon
+                            paths['observations'].view(-1, self.observation_dim), # model*particles*horizon x dim
+                            paths['actions'].view(-1, self.action_dim)) # model*particles*horizon
             pred_err = pred_err.view(num_models, num_particles, horizon) # model x particles x horizon
 
+            # pred_err = self.learned_model.compute_delta(paths['observations'], paths['actions']) 
             violations = torch.where(pred_err > self.truncate_lim)
             dones = paths["dones"]
             dones[violations] = 1

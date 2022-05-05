@@ -150,19 +150,31 @@ else:
                          **job_data) for i in range(job_data['num_models'])]
 
 # Construct policy and set exploration level correctly for NPG
+init_policy_loaded = False
 if 'init_policy' in job_data.keys():
-    policy = pickle.load(open(job_data['init_policy'], 'rb'))
-    policy.set_param_values(policy.get_param_values())
-    init_log_std = job_data['init_log_std']
-    min_log_std = job_data['min_log_std']
-    if init_log_std:
-        params = policy.get_param_values()
-        params[:policy.action_dim] = tensor_utils.tensorize(init_log_std)
-        policy.set_param_values(params)
-    if min_log_std:
-        policy.min_log_std[:] = tensor_utils.tensorize(min_log_std)
-        policy.set_param_values(policy.get_param_values())
-else:
+    bc_init = False
+    if 'bc_init' in job_data.keys():
+        bc_init = job_data['bc_init']
+    if not bc_init:
+        try:
+            policy = pickle.load(open(job_data['init_policy'], 'rb'))
+            policy.set_param_values(policy.get_param_values())
+            init_log_std = job_data['init_log_std']
+            min_log_std = job_data['min_log_std']
+            if init_log_std:
+                params = policy.get_param_values()
+                params[:policy.action_dim] = tensor_utils.tensorize(init_log_std)
+                policy.set_param_values(params)
+            if min_log_std:
+                policy.min_log_std[:] = tensor_utils.tensorize(min_log_std)
+                policy.set_param_values(policy.get_param_values())
+            print('Policy Loaded')
+            init_policy_loaded = True
+        except:
+            print('Initial policy not found')
+    else:
+        print('Ignoring initial policy since bc_init is True')
+if not init_policy_loaded:
     policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'],
                  init_log_std=job_data['init_log_std'], min_log_std=job_data['min_log_std'])
 
@@ -311,6 +323,8 @@ if 'bc_init' in job_data.keys():
         policy.to(job_data['device'])
         bc_agent = BC(paths, policy, epochs=job_data['bc_epochs'], batch_size=job_data['bc_batch_size'], lr=job_data['bc_lr'], loss_type='MSE') #epochs=5
         bc_agent.train()
+        print('Saving behavior cloned policy')
+        pickle.dump(policy, open(OUT_DIR + '/bc_policy.pickle', 'wb'))
 
 if job_data['eval_rollouts'] > 0:
     print("Performing validation rollouts for BC policy ... ")
