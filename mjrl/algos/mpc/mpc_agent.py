@@ -183,7 +183,7 @@ class MPCAgent():
             act_seq = paths["actions"][best_idx].squeeze(0) #self.mean_action[best_idx].clone()
         elif mode == 'worst_mean':
             paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
-            ), sample_cl_actions=self.optimize_open_loop,
+                1), sample_cl_actions=self.optimize_open_loop,
             obs_buff=self.obs_buff2, act_buff=self.act_buff2)
             worst_idx = torch.argmin(paths['discounted_return'])
             act_seq = paths["actions"][worst_idx].squeeze(0) #self.mean_action[worst_idx].clone()
@@ -199,6 +199,8 @@ class MPCAgent():
             act_seq = self.mean_action[rand_idx]
         elif mode == 'average_mean':
             act_seq = torch.mean(self.mean_action, dim=0)
+        elif type(mode) is int:
+            act_seq = self.mean_action[mode]
 
         elif mode == 'best_mean_sample':
             raise ValueError('To be implemented')
@@ -212,12 +214,12 @@ class MPCAgent():
         return act_seq
 
     def generate_rollouts(self, observation):
-        open_loop_actions = self.sample_actions_batch()
+        open_loop_actions = self.sample_actions_batch(filter_actions=False)
         paths = self.rollout_actions(observation, open_loop_actions, sample_cl_actions=True,
-        obs_buff=self.obs_buff, act_buff=self.act_buff)  # , action_batch)
+        obs_buff=self.obs_buff, act_buff=self.act_buff, filter_actions=True)  # , action_batch)
         return paths
 
-    def rollout_actions(self, start_obs, open_loop_actions, sample_cl_actions=True, obs_buff=None, act_buff=None): # , action_batch):
+    def rollout_actions(self, start_obs, open_loop_actions, sample_cl_actions=True, obs_buff=None, act_buff=None, filter_actions=False): # , action_batch):
         # open_loop_actions # model x particles x horizon x dim
         ts = timer.time()
         num_models, num_particles, horizon, _ = open_loop_actions.shape
@@ -232,15 +234,29 @@ class MPCAgent():
 
         # st = start_obs.clone().unsqueeze(0).repeat(num_particles, 1)
         st = start_obs.view(1,1,-1).repeat(num_models, num_particles, 1)  # model x particles x dim
+        beta_0, beta_1, beta_2 = self.filter_coeffs
+        def ar_filter(at, t):
+            if t==0:
+                ar_filter.at_1 = ar_filter.at_2 = at
+            at_new = at * beta_0 + ar_filter.at_1 * beta_1 + ar_filter.at_2 * beta_2
+            ar_filter.at_1 = at
+            ar_filter.at_2 = ar_filter.at_1
+            return at_new
+
         for t in range(horizon):
             # get open-loop action from shifted mean
             a_ol = open_loop_actions[:, :, t] # model x particles x dim
             if sample_cl_actions:
                 a_policy, _ = self.sample_actions_policy(st.view(-1,self.observation_dim)) #closed-loop actions from behavior policy ??
                 a_policy = a_policy.view(a_ol.shape)
-                at = (1.0-self.mixing_factor) * a_policy + self.mixing_factor * a_ol #mixed action
+                if self.optimize_open_loop:
+                    at = a_policy + a_ol
+                else:
+                    at = (1.0-self.mixing_factor) * a_policy + self.mixing_factor * a_ol #mixed action
             else:
                 at = a_ol
+            if filter_actions:
+                at = ar_filter(at, t)
             stp1 = self.learned_model.forward(st, at) # model x particles x dim
             obs_buff[:,:, t,:] = st  # model x particles x horizon x dim
             act_buff[:,:, t,:] = at  # model x particles x horizon x dim
@@ -293,7 +309,7 @@ class MPCAgent():
                             paths['actions'].view(-1, self.action_dim)) # model*particles*horizon
             pred_err = pred_err.view(num_models, num_particles, horizon) # model x particles x horizon
 
-            # pred_err = self.learned_model.compute_delta(paths['observations'], paths['actions']) 
+            # pred_err = self.learned_model.compute_delta(paths['observations'], paths['actions'])
             violations = torch.where(pred_err > self.truncate_lim)
             dones = paths["dones"]
             dones[violations] = 1
@@ -514,7 +530,7 @@ class MPCAgent():
     def control_costs(self, delta):
         pass
 
-    def sample_actions_batch(self):
+    def sample_actions_batch(self, filter_actions=False):
         """
         sample batch of open-loop actions from current mean
         """
@@ -522,10 +538,11 @@ class MPCAgent():
         # delta = delta.view(delta.shape[0], self.horizon, self.action_dim)
         eps = torch.randn(self.num_models, self.num_particles, self.horizon, self.action_dim, device=self.device)
         action_batch = self.mean_action.unsqueeze(1).repeat(1,self.num_particles, 1, 1) + self.init_std * eps
-        action_batch = self.filter_actions(action_batch)
+        if filter_actions:
+            action_batch = self.filter_actions(action_batch)
         return action_batch
 
-    def sample_actions_policy(self, observations):
+    def sample_actions_policy(self, observations, include_noise=False):
         # assert type(observation) == np.ndarray
         # if self.device != 'cpu':
         #     print("Warning: get_action function should be used only for simulation.")
@@ -537,7 +554,7 @@ class MPCAgent():
             mean = self.sampling_policy.forward(observations)
             eps = torch.randn_like(mean)
             noise = torch.exp(self.sampling_policy.log_std) * eps
-            action = mean + noise
+            action = mean + noise * include_noise
         return action, {'mean': mean, 'log_std': self.sampling_policy.log_std_val, 'evaluation': mean}
 
     def filter_actions(self, action_batch):
@@ -654,4 +671,3 @@ class MPCAgent():
     #     if self.save_logs:
     #         self.logger.log_kv('time_mean_evaluation', timer.time() - ts)
     #     return paths["discounted_return"]
- 

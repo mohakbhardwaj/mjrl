@@ -63,7 +63,7 @@
 'sample_mode': 'best_mean',
 'base_action': 'repeat',
 'hotstart': True,
-'shift_steps': 2,
+'shift_steps': 1,
 'squash_fn': 'clamp',
 'optimize_open_loop': False,
 'filter_coeffs': [0.8, 0.2, 0.0],
