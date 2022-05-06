@@ -13,34 +13,19 @@ def reward_function(paths):
     # path["observations"] : (num_models, num_traj, horizon, obs_dim)
     # return paths that contain rewards in path["rewards"]
     # path["rewards"] should have shape (num_models, num_traj, horizon)
-    obs = torch.clip(paths["observations"], -10.0, 10.0)
-    act = paths["actions"].clip(-1.0, 1.0)
+    # obs = torch.clip(paths["observations"], -10.0, 10.0)
+    # act = paths["actions"].clip(-1.0, 1.0)
+    obs = paths["observations"]
+    act = paths["actions"]
     vel_x = obs[:, :, :, -6] / 0.02
     power = torch.square(act).sum(axis=-1)
     height = obs[:, :, :, 0]
     ang = obs[:, :, :, 1]
-    alive_bonus = 1.0 * (height > 0.7) * (torch.abs(ang) <= 0.2)
+    alive_bonus = 1.0 * (height > 0.7) * (torch.abs(ang) < 0.2)
     rewards = vel_x + alive_bonus - 1e-3*power
     paths["rewards"] = rewards #if rewards.shape[0] > 1 else rewards.ravel()
 
     return paths
-
-def reward_function2(paths):
-    # path has two keys: observations and actions
-    # path["observations"] : (num_traj, horizon, obs_dim)
-    # return paths that contain rewards in path["rewards"]
-    # path["rewards"] should have shape (num_traj, horizon)
-    obs = np.clip(paths["observations"], -10.0, 10.0)
-    act = paths["actions"].clip(-1.0, 1.0)
-    vel_x = obs[:, :, -6] / 0.02
-    power = np.square(act).sum(axis=-1)
-    height = obs[:, :, 0]
-    ang = obs[:, :, 1]
-    alive_bonus = 1.0 * (height > 0.7) * (np.abs(ang) <= 0.2)
-    rewards = vel_x + alive_bonus - 1e-3*power
-    paths["rewards"] = rewards if rewards.shape[0] > 1 else rewards.ravel()
-    return paths
-
 
 def termination_function(paths):
     # path has 2 keys: observations, actions
@@ -50,10 +35,10 @@ def termination_function(paths):
     height = obs[:,:,:,0]
     angle = obs[:,:,:,1]
     dones = torch.zeros(obs.shape[0], obs.shape[1], obs.shape[2], device=obs.device)
-    obs_mask = torch.all(torch.abs(obs) >= 10, dim=-1)
-    dones[obs_mask] = 1
+    obs_term = torch.all(torch.abs(obs[:,:,:,1:]) >= 100, dim=-1)
+    dones[obs_term] = 1
     dones[height <= 0.7] = 1
-    dones[torch.abs(angle) >= 0.15] = 1
+    dones[torch.abs(angle) >= 0.2] = 1
     
     #set all states after the first terminal state to 
     #terminal
@@ -82,7 +67,21 @@ def termination_function(paths):
     #     path["terminated"] = done
     return paths
 
-
+def reward_function2(paths):
+    # path has two keys: observations and actions
+    # path["observations"] : (num_traj, horizon, obs_dim)
+    # return paths that contain rewards in path["rewards"]
+    # path["rewards"] should have shape (num_traj, horizon)
+    obs = np.clip(paths["observations"], -10.0, 10.0)
+    act = paths["actions"].clip(-1.0, 1.0)
+    vel_x = obs[:, :, -6] / 0.02
+    power = np.square(act).sum(axis=-1)
+    height = obs[:, :, 0]
+    ang = obs[:, :, 1]
+    alive_bonus = 1.0 * (height > 0.7) * (np.abs(ang) < 0.2)
+    rewards = vel_x + alive_bonus - 1e-3*power
+    paths["rewards"] = rewards if rewards.shape[0] > 1 else rewards.ravel()
+    return paths
 def termination_function2(paths):
     # paths is a list of path objects for this function
     for path in paths:

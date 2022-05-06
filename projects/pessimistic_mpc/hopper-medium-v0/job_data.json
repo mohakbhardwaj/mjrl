@@ -1,7 +1,6 @@
 {
     "env_name": "hopper-medium-v0",
     "act_repeat": 1,
-    "seed": 123,
     "num_iter": 2,
     "eval_rollouts": 5,
     "num_models": 4,
@@ -52,7 +51,7 @@
         "n_iters": 1,
         "horizon": 10,
         "num_particles": 100,
-        "init_cov": 0.0001,
+        "init_cov": 0.01,
         "gamma": 0.999,
         "beta": 3.33,
         "mixing_factor": 0.8,
@@ -63,7 +62,7 @@
         "hotstart": true,
         "shift_steps": 1,
         "squash_fn": "clamp",
-        "optimize_open_loop": false,
+        "optimize_open_loop": true,
         "filter_coeffs": [
             0.8,
             0.2,
@@ -71,5 +70,8 @@
         ]
     },
     "hvp_frac": 1.0,
-    "num_cpu": 1
+    "num_cpu": 1,
+    "base_seed": 123,
+    "truncate_lim": 0.017788834869861603,
+    "seed": 123
 }
