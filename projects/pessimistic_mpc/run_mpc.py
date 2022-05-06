@@ -39,29 +39,38 @@ from mjrl.algos.mpc.ensemble_nn_dynamics import batch_call
 parser = argparse.ArgumentParser(
     description='Model accelerated policy optimization.')
 parser.add_argument('--output', '-o', type=str,
-                    required=True, help='location to store results')
+                    #required=True,
+                    default='exp_results',
+                    help='location to store results')
 parser.add_argument('--config', '-c', type=str, required=True,
                     help='path to config file with exp params')
 parser.add_argument('--include', '-i', type=str,
                     required=False, help='package to import')
 args = parser.parse_args()
-OUT_DIR = args.output
+
+with open(args.config, 'r') as f:  # load config
+    job_data = eval(f.read())
+if args.include:
+    exec("import "+args.include)  # import extra stuff
+ENV_NAME = job_data['env_name']
+SEED = job_data['seed']
+
+
+
+OUT_DIR = os.path.join(args.output, ENV_NAME+'_'+str(SEED))
+if not os.path.exists(args.output):
+    os.mkdir(args.output)
 if not os.path.exists(OUT_DIR):
     os.mkdir(OUT_DIR)
 if not os.path.exists(OUT_DIR+'/iterations'):
     os.mkdir(OUT_DIR+'/iterations')
 if not os.path.exists(OUT_DIR+'/logs'):
     os.mkdir(OUT_DIR+'/logs')
-with open(args.config, 'r') as f:
-    job_data = eval(f.read())
-if args.include:
-    exec("import "+args.include)
+
 
 # Unpack args and make files for easy access
 logger = DataLog()
-ENV_NAME = job_data['env_name']
 EXP_FILE = OUT_DIR + '/job_data.json'
-SEED = job_data['seed']
 
 # base cases
 if 'eval_rollouts' not in job_data.keys():
@@ -86,7 +95,12 @@ if 'model_file' not in job_data.keys():
     job_data['model_file'] = None
 
 assert job_data['start_state'] in ['init', 'buffer']
-assert 'data_file' in job_data.keys()
+# assert 'data_file' in job_data.keys()
+job_data['data_file'] = os.path.join('datasets', ENV_NAME+'.pickle')
+job_data['model_file'] = os.path.join(OUT_DIR, 'models.pickle')
+job_data['init_policy'] = os.path.join(OUT_DIR, 'bc_policy.pickle')
+
+
 with open(EXP_FILE, 'w') as f:
     json.dump(job_data, f, indent=4)
 del(job_data['seed'])
@@ -142,42 +156,60 @@ mpc_params = job_data['mpc_params']
 # Setup policy, model, and agent
 # ===============================================================================
 
-if job_data['model_file'] is not None:
-    model_trained = True
+model_trained = False
+try:
     models = pickle.load(open(job_data['model_file'], 'rb'))
-else:
-    model_trained = False
+    model_trained = True
+except:
     models = [WorldModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+i,
-                         **job_data) for i in range(job_data['num_models'])]
+                    **job_data) for i in range(job_data['num_models'])]
 
-# Construct policy and set exploration level correctly for NPG
-init_policy_loaded = False
-if 'init_policy' in job_data.keys():
-    bc_init = False
-    if 'bc_init' in job_data.keys():
-        bc_init = job_data['bc_init']
-    if not bc_init:
-        try:
-            policy = pickle.load(open(job_data['init_policy'], 'rb'))
-            policy.set_param_values(policy.get_param_values())
-            init_log_std = job_data['init_log_std']
-            min_log_std = job_data['min_log_std']
-            if init_log_std:
-                params = policy.get_param_values()
-                params[:policy.action_dim] = tensor_utils.tensorize(init_log_std)
-                policy.set_param_values(params)
-            if min_log_std:
-                policy.min_log_std[:] = tensor_utils.tensorize(min_log_std)
-                policy.set_param_values(policy.get_param_values())
-            print('Policy Loaded')
-            init_policy_loaded = True
-        except:
-            print('Initial policy not found')
-    else:
-        print('Ignoring initial policy since bc_init is True')
-if not init_policy_loaded:
+policy_trained = False
+try:
+    policy = pickle.load(open(job_data['init_policy'], 'rb'))
+    policy.set_param_values(policy.get_param_values())
+    init_log_std = job_data['init_log_std']
+    min_log_std = job_data['min_log_std']
+    if init_log_std:
+        params = policy.get_param_values()
+        params[:policy.action_dim] = tensor_utils.tensorize(init_log_std)
+        policy.set_param_values(params)
+    if min_log_std:
+        policy.min_log_std[:] = tensor_utils.tensorize(min_log_std)
+        policy.set_param_values(policy.get_param_values())
+    policy_trained = True
+    print('Policy Loaded')
+except:
     policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'],
-                 init_log_std=job_data['init_log_std'], min_log_std=job_data['min_log_std'])
+            init_log_std=job_data['init_log_std'], min_log_std=job_data['min_log_std'])
+
+# init_policy_loaded = False
+# if 'init_policy' in job_data.keys():
+#     bc_init = False
+#     if 'bc_init' in job_data.keys():
+#         bc_init = job_data['bc_init']
+#     if not bc_init:
+#         try:
+#             policy = pickle.load(open(job_data['init_policy'], 'rb'))
+#             policy.set_param_values(policy.get_param_values())
+#             init_log_std = job_data['init_log_std']
+#             min_log_std = job_data['min_log_std']
+#             if init_log_std:
+#                 params = policy.get_param_values()
+#                 params[:policy.action_dim] = tensor_utils.tensorize(init_log_std)
+#                 policy.set_param_values(params)
+#             if min_log_std:
+#                 policy.min_log_std[:] = tensor_utils.tensorize(min_log_std)
+#                 policy.set_param_values(policy.get_param_values())
+#             print('Policy Loaded')
+#             init_policy_loaded = True
+#         except:
+#             print('Initial policy not found')
+#     else:
+#         print('Ignoring initial policy since bc_init is True')
+# if not init_policy_loaded:
+#     policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'],
+#                  init_log_std=job_data['init_log_std'], min_log_std=job_data['min_log_std'])
 
 # baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=256, epochs=1,  learn_rate=1e-3,
 #                        device=job_data['device'])
@@ -211,8 +243,10 @@ try:
     logger.log_kv('rollout_metric', rollout_metric)
 except:
     pass
+
 if not model_trained:
     for i, model in enumerate(models):
+        print("Training dynamics models {}".format(i))
         dynamics_loss = model.fit_dynamics(s, a, sp, **job_data)
         logger.log_kv('dyn_loss_' + str(i), dynamics_loss[-1])
         loss_general = model.compute_loss(s, a, sp)  # generalization error
@@ -220,10 +254,15 @@ if not model_trained:
         if job_data['learn_reward']:
             reward_loss = model.fit_reward(s, a, r.reshape(-1, 1), **job_data)
             logger.log_kv('rew_loss_' + str(i), reward_loss[-1])
+
+    print('Saving trained dynamics models')
+    pickle.dump(models, open(os.path.join(OUT_DIR, 'models.pickle'), 'wb'))
+
 else:
     for i, model in enumerate(models):
         loss_general = model.compute_loss(s, a, sp)
         logger.log_kv('dyn_loss_gen_' + str(i), loss_general)
+
 tf = timer.time()
 logger.log_kv('model_learning_time', tf-ts)
 print("Model learning statistics")
@@ -314,18 +353,19 @@ agent = MPCAgent(env=e, learned_model=ensemble_model, sampling_policy=policy, mp
                  termination_function=termination_function, termination_function2=termination_function2,
                  truncate_lim=job_data['truncate_lim'], truncate_reward=job_data['truncate_reward'],
                  device=job_data['device'])
+
+
 # ===============================================================================
 # Behavior Cloning Initialization
 # ===============================================================================
-if 'bc_init' in job_data.keys():
-    if job_data['bc_init']:
-        from mjrl.algos.behavior_cloning import BC
-        print('Training behavior cloning')
-        policy.to(job_data['device'])
-        bc_agent = BC(paths, policy, epochs=job_data['bc_epochs'], batch_size=job_data['bc_batch_size'], lr=job_data['bc_lr'], loss_type='MSE') #epochs=5
-        bc_agent.train()
-        print('Saving behavior cloned policy')
-        pickle.dump(policy, open(OUT_DIR + '/bc_policy.pickle', 'wb'))
+if not policy_trained:
+    from mjrl.algos.behavior_cloning import BC
+    print('Training behavior cloning')
+    policy.to(job_data['device'])
+    bc_agent = BC(paths, policy, epochs=job_data['bc_epochs'], batch_size=job_data['bc_batch_size'], lr=job_data['bc_lr'], loss_type='MSE') #epochs=5
+    bc_agent.train()
+    print('Saving behavior cloned policy')
+    pickle.dump(policy, open(OUT_DIR + '/bc_policy.pickle', 'wb'))
 
 if job_data['eval_rollouts'] > 0:
     print("Performing validation rollouts for BC policy ... ")
@@ -335,11 +375,6 @@ if job_data['eval_rollouts'] > 0:
     eval_score_bc = np.mean([np.sum(p['rewards']) for p in eval_paths])
     print(eval_score_bc)
     logger.log_kv('eval_score_bc', eval_score_bc)
-    # try:
-    #     eval_metric_bc = e.env.env.evaluate_success(eval_paths)
-    #     logger.log_kv('eval_metric_bc', eval_metric_bc)
-    # except:
-    #     pass
 else:
     eval_score_bc = 1e-8
 

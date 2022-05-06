@@ -110,3 +110,6 @@ datasets/
 *.pickle
 iterations/
 logs/
+
+# logs
+exp_results/

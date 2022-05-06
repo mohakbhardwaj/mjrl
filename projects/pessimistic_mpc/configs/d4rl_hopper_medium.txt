@@ -2,7 +2,7 @@
 
 # general inputs
 
-'env_name'      :   'hopper-medium-v0',
+'env_name'      :   'hopper-medium-v2',
 'act_repeat'    :   1,
 'seed'          :   123,
 'num_iter'      :   2,
@@ -11,17 +11,14 @@
 'save_freq'     :   25,
 'device'        :   'cuda',
 'learn_reward'  :   False,
-'data_file'     :   '../morel/datasets/hopper-medium-v0.pickle',
 'reward_file'   :   './utils/reward_functions/gym_hopper.py',
-'model_file'    :   '../morel/hopper-medium-v0-models.pickle',
-'init_policy'   :   './hopper-medium-v0/bc_policy.pickle',
+
 'pessimism_coef':   3.0,
 'truncate_reward' : 0.0,
 'exp_notes'     :   'Example to illustrate MOReL on a D4RL task.',
 
 #behavior cloning
-'bc_init'       : False,
-'bc_epochs'     : 10,
+'bc_epochs'     : 20,
 'bc_batch_size' : 256,
 'bc_lr'         : 1e-3,
 
@@ -38,7 +35,7 @@
 
 # NPG params
 
-'policy_size'   :   (64, 64),
+'policy_size'   :   (256, 256),
 'step_size'     :   0.02,
 'init_log_std'  :   -0.25,
 'min_log_std'   :   -1.0,
