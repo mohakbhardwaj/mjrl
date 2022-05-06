@@ -9,7 +9,7 @@
     "learn_reward": false,
     "data_file": "../morel/datasets/halfcheetah-medium-v2.pickle",
     "reward_file": "./utils/reward_functions/gym_halfcheetah.py",
-    "model_file": "./halfcheetah-medium-v2-models.pickle",
+    "model_file": "../morel/halfcheetah-medium-v2-models.pickle",
     "init_policy": "./halfcheetah-medium-v2/bc_policy.pickle",
     "pessimism_coef": 3.0,
     "truncate_reward": 0.0,
@@ -49,7 +49,7 @@
     },
     "mpc_params": {
         "n_iters": 1,
-        "horizon": 20,
+        "horizon": 10,
         "num_particles": 100,
         "init_cov": 0.02,
         "gamma": 0.999,
@@ -60,7 +60,7 @@
         "sample_mode": "best_mean",
         "base_action": "repeat",
         "hotstart": true,
-        "shift_steps": 2,
+        "shift_steps": 1,
         "squash_fn": "clamp",
         "optimize_open_loop": false,
         "filter_coeffs": [
@@ -72,6 +72,6 @@
     "hvp_frac": 1.0,
     "num_cpu": 1,
     "base_seed": 123,
-    "truncate_lim": 0.16482079029083252,
+    "truncate_lim": 0.13356687625249225,
     "seed": 123
 }

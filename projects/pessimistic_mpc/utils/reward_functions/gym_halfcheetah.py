@@ -14,12 +14,11 @@ def reward_function(paths):
     # return paths that contain rewards in path["rewards"]
     # path["rewards"] should have shape (num_models, num_traj, horizon)
     # obs = torch.clip(paths["observations"], -10.0, 10.0)
-    print(paths["observations"].shape)
     obs = paths["observations"]
-    act = paths["actions"].clip(-1.0, 1.0)
-    vel_x = obs[:, :, :, -4] / 0.02
-    power = torch.square(act).sum(axis=-1)
-    rewards = vel_x - 0.1*power
+    act = paths["actions"] #.clip(-1.0, 1.0)
+    reward_run = obs[:, :, :, -9] / 0.02 #x velocity
+    reward_ctrl = -0.1 * torch.square(act).sum(axis=-1)
+    rewards = reward_run + reward_ctrl
     paths["rewards"] = rewards  # if rewards.shape[0] > 1 else rewards.ravel()
 
     return paths
