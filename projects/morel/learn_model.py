@@ -23,6 +23,7 @@ from mjrl.policies.gaussian_mlp import MLP
 from mjrl.baselines.mlp_baseline import MLPBaseline
 from mjrl.baselines.quadratic_baseline import QuadraticBaseline
 from mjrl.utils.gym_env import GymEnv
+import d4rl
 from mjrl.utils.logger import DataLog
 from mjrl.utils.make_train_plots import make_train_plots
 from mjrl.algos.mbrl.nn_dynamics import WorldModel

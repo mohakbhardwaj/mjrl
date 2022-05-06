@@ -2,7 +2,7 @@
 
 # general inputs
 
-'env_name'      :   'Hopper-v3',
+'env_name'      :   'hopper-medium-v2', #'Hopper-v3',
 'act_repeat'    :   1,
 'seed'          :   123,
 'num_iter'      :   500,

@@ -14,6 +14,7 @@ from mjrl.baselines.mlp_baseline import MLPBaseline
 from mjrl.policies.gaussian_mlp import MLP
 from tabulate import tabulate
 from tqdm import tqdm
+import d4rl
 import mjrl.utils.tensor_utils as tensor_utils
 import mjrl.samplers.core as sampler
 import json
