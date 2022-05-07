@@ -19,7 +19,7 @@ from mjrl.utils.tensor_utils import d4rl2paths
 # ===============================================================================
 parser = argparse.ArgumentParser(description='Convert dataset from d4rl format to paths.')
 parser.add_argument('--env_name', type=str, required=True, help='environment ID')
-parser.add_argument('--output', type=str, default='dataset', help='location to store data')
+parser.add_argument('--output', type=str, default='datasets', help='location to store data')
 parser.add_argument('--act_repeat', type=int, default=1, help='action repeat, will average actions over the repeat')
 parser.add_argument('--include', type=str, default=None, help='a file to include (can contain imports and function definitions)')
 parser.add_argument('--header', type=str, required=False, help='header commands to execute (can include imports)')
