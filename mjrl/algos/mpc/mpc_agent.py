@@ -81,6 +81,7 @@ class MPCAgent():
         self.filter_coeffs = self.mpc_params['filter_coeffs']
         self.mixing_factor = self.mpc_params['mixing_factor']
         self.optimize_open_loop = self.mpc_params['optimize_open_loop']
+        self.pessimism_mode = self.mpc_params['pessimism_mode']
 
         #set the initial mean and covariance of mpc
         self.init_mean = torch.zeros((self.num_models, self.horizon, self.action_dim))
@@ -319,14 +320,18 @@ class MPCAgent():
             pred_err = pred_err.view(num_models, num_particles, horizon) # model x particles x horizon
 
             # pred_err = self.learned_model.compute_delta(paths['observations'], paths['actions'])
-            violations = torch.where(pred_err > self.truncate_lim.view(-1,1,1))
-            dones = paths["dones"]
-            dones[violations] = 1
-            dones = torch.cumsum(dones, dim=-1)
-            dones[dones > 0] = 1.0
-            paths["dones"] = dones
-            paths['terminated'] = torch.any(dones, dim=-1)
-            paths['rewards'] += paths["dones"] * self.truncate_reward
+            if self.pessimism_mode == "truncation":
+                violations = torch.where(pred_err > self.truncate_lim.view(-1,1,1))
+                dones = paths["dones"]
+                dones[violations] = 1
+                dones = torch.cumsum(dones, dim=-1)
+                dones[dones > 0] = 1.0
+                paths["dones"] = dones
+                paths['terminated'] = torch.any(dones, dim=-1)
+                paths['rewards'] += paths["dones"] * self.truncate_reward
+            elif self.pessimism_mode == "bonus":
+                paths['rewards'] -= self.truncate_lim.view(-1,1,1) * pred_err            
+            
             paths = self.compute_discounted_return(paths)
 
         if self.save_logs:
