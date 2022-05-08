@@ -250,7 +250,7 @@ if 'pessimism_coef' in job_data.keys():
     else:
         # truncate_lim = (1.0 / job_data['pessimism_coef']) * np.max(delta)
         # print("Maximum error before truncation (i.env. unknown region threshold) = %f" % truncate_lim)
-        truncate_lim = 1.0 / job_data['pessimism_coef'] / ensemble_model.train_info['ratio'] /  job_data['horizon']
+        truncate_lim = 1.0 / job_data['pessimism_coef'] / ensemble_model.train_info['ratio'] /  job_data['mpc_params']['horizon']
     job_data['truncate_lim'] = truncate_lim.tolist()
     job_data['truncate_reward'] = job_data['truncate_reward'] if 'truncate_reward' in job_data.keys() else 0.0
 else:

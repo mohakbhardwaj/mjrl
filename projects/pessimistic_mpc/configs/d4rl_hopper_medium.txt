@@ -13,7 +13,7 @@
 'learn_reward'  :   False,
 'reward_file'   :   './utils/reward_functions/gym_hopper.py',
 
-'pessimism_coef':   0.01,
+'pessimism_coef':   1.0,
 'truncate_reward' : 0.0,
 'exp_notes'     :   'Example to illustrate MOReL on a D4RL task.',
 
