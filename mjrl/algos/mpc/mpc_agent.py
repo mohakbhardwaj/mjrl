@@ -28,6 +28,7 @@ class MPCAgent():
     device='cpu',
     save_logs=True):
 
+        self._avg_scores = []
         self.env = env
         if learned_model is None:
                 print("Algorithm requires a (list of) learned dynamics model")
@@ -49,6 +50,9 @@ class MPCAgent():
         # self.reward_function2 = reward_function2
         self.termination_function2 = termination_function2
         self.truncate_lim, self.truncate_reward = truncate_lim, truncate_reward
+        if isinstance(self.truncate_lim, list):
+            self.truncate_lim = torch.Tensor(self.truncate_lim)
+
         self.seed = seed
         self.save_logs = save_logs
 
@@ -126,6 +130,7 @@ class MPCAgent():
         self.sampling_policy.to(device)
         self.obs_buff, self.act_buff = self.obs_buff.to(device), self.act_buff.to(device)
         self.obs_buff2, self.act_buff2 = self.obs_buff2.to(device), self.act_buff2.to(device)
+        self.truncate_lim = self.truncate_lim.to(device)
         self.device = device
 
     def is_cuda(self):
@@ -159,7 +164,7 @@ class MPCAgent():
 
                 # update distribution parameters
                 with profiler.record_function("mppi_update"):
-                    self.update_distribution(paths)
+                    score = self.update_distribution(paths)
 
                 # check if converged
                 if self.check_convergence():
@@ -169,6 +174,7 @@ class MPCAgent():
             #calculate optimal value estimate if required
             # info['entropy'].append(self.entropy)
 
+        self._avg_scores.append(score[0].cpu().numpy())
         self.num_steps += 1
 
         return curr_action_seq
@@ -200,7 +206,10 @@ class MPCAgent():
         elif mode == 'average_mean':
             act_seq = torch.mean(self.mean_action, dim=0)
         elif type(mode) is int:
-            act_seq = self.mean_action[mode]
+            paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
+                1), sample_cl_actions=self.optimize_open_loop,
+                obs_buff=self.obs_buff2, act_buff=self.act_buff2)
+            act_seq = paths["actions"][mode].squeeze(0)
 
         elif mode == 'best_mean_sample':
             raise ValueError('To be implemented')
@@ -310,7 +319,7 @@ class MPCAgent():
             pred_err = pred_err.view(num_models, num_particles, horizon) # model x particles x horizon
 
             # pred_err = self.learned_model.compute_delta(paths['observations'], paths['actions'])
-            violations = torch.where(pred_err > self.truncate_lim)
+            violations = torch.where(pred_err > self.truncate_lim.view(-1,1,1))
             dones = paths["dones"]
             dones[violations] = 1
             dones = torch.cumsum(dones, dim=-1)
@@ -493,13 +502,15 @@ class MPCAgent():
         if self.optimize_open_loop:
             actions = paths['open_loop_actions']
         else: actions = paths['actions'] #torch.cat([path['actions'].unsqueeze(0) for path in paths], dim=0)
-        # discounted_return = torch.max(paths["discounted_return"], dim=0)[0]
         w = torch.softmax((1.0/self.beta) * paths["discounted_return"], dim=-1)
         #Update mean
         weighted_seq = w.T * actions.T
         new_mean = torch.sum(weighted_seq.T, dim=1)
         self.mean_action = (1.0 - self.step_size_mean) * self.mean_action +\
             self.step_size_mean * new_mean
+
+        scores, _ = torch.max(paths["discounted_return"], dim=1)  # over particles
+        return scores
 
     def compute_discounted_return(self, paths):
         rewards = paths['rewards']
@@ -540,6 +551,7 @@ class MPCAgent():
         action_batch = self.mean_action.unsqueeze(1).repeat(1,self.num_particles, 1, 1) + self.init_std * eps
         if filter_actions:
             action_batch = self.filter_actions(action_batch)
+        # TODO always sample on pure BC policy. Add one zero action one.
         return action_batch
 
     def sample_actions_policy(self, observations, include_noise=False):
@@ -587,6 +599,7 @@ class MPCAgent():
     def reset(self):
         self.reset_distribution()
         self.num_steps = 0
+        self._avg_scores = []
 
     def check_convergence(self):
         return False
