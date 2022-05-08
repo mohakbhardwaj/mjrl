@@ -2,7 +2,7 @@
 
 # general inputs
 
-'env_name'      :   'halfcheetah-medium-v2',
+'env_name'      :   'walker2d-medium-v2',
 'act_repeat'    :   1,
 'seed'          :   123,
 'num_iter'      :   2,
@@ -11,13 +11,13 @@
 'save_freq'     :   25,
 'device'        :   'cuda',
 'learn_reward'  :   False,
-'reward_file'   :   './utils/reward_functions/gym_halfcheetah.py',
-'pessimism_coef':   5.0,
+'reward_file'   :   './utils/reward_functions/gym_walker2d.py',
+
+'pessimism_coef':   3.0,
 'truncate_reward' : 0.0,
 'exp_notes'     :   'Example to illustrate MOReL on a D4RL task.',
 
 #behavior cloning
-'bc_init'       : False,
 'bc_epochs'     : 20,
 'bc_batch_size' : 256,
 'bc_lr'         : 1e-3,
@@ -29,7 +29,7 @@
 'fit_lr'        :   1e-3,
 'fit_wd'        :   0.0,
 'fit_mb_size'   :   256,
-'fit_epochs'    :   40,
+'fit_epochs'    :   25,
 'refresh_fit'   :   False,
 'max_steps'     :   1e8,
 
@@ -66,9 +66,5 @@
 'filter_coeffs': [0.8, 0.2, 0.0],
 
 }
-
-
-
-
 
 }

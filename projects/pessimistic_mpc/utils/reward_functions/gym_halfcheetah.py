@@ -3,8 +3,8 @@ import numpy as np
 
 # observaion mask for scaling
 # 1.0 for positions and dt=0.02 for velocities
-obs_mask = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 0.02,
-                     0.02, 0.02, 0.02, 0.02, 0.02, 0.02,
+obs_mask = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+                     1.0, 1.0, 0.02, 0.02, 0.02, 0.02,
                      0.02, 0.02, 0.02, 0.02, 0.02])
 
 
@@ -14,8 +14,8 @@ def reward_function(paths):
     # return paths that contain rewards in path["rewards"]
     # path["rewards"] should have shape (num_models, num_traj, horizon)
     # obs = torch.clip(paths["observations"], -10.0, 10.0)
-    obs = paths["observations"]
-    act = paths["actions"] #.clip(-1.0, 1.0)
+    obs = paths["observations"]#.clip(-10.0, 10.0)
+    act = paths["actions"].clip(-1.0, 1.0)
     reward_run = obs[:, :, :, -9] / 0.02 #x velocity
     reward_ctrl = -0.1 * torch.square(act).sum(axis=-1)
     rewards = reward_run + reward_ctrl

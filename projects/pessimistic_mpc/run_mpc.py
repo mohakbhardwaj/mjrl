@@ -367,6 +367,7 @@ if not policy_trained:
     print('Saving behavior cloned policy')
     pickle.dump(policy, open(OUT_DIR + '/bc_policy.pickle', 'wb'))
 
+
 if job_data['eval_rollouts'] > 0:
     print("Performing validation rollouts for BC policy ... ")
     # set the policy device back to CPU for env sampling

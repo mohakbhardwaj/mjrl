@@ -51,7 +51,7 @@
 'n_iters': 1,
 'horizon': 10,
 'num_particles': 100,
-'init_cov': 0.01,
+'init_cov': 0.1,
 'gamma': 0.999,
 'beta': 3.33,
 'mixing_factor': 0.8, #0.6,
