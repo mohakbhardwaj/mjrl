@@ -12,6 +12,8 @@ from mjrl.utils.logger import DataLog
 from mjrl.algos.mpc.ensemble_nn_dynamics import EnsembleWorldModel
 torch.set_printoptions(precision=8)
 
+DEBUG = 0
+
 class MPCAgent():
     def __init__(self,
     env,
@@ -50,8 +52,7 @@ class MPCAgent():
         # self.reward_function2 = reward_function2
         self.termination_function2 = termination_function2
         self.truncate_lim, self.truncate_reward = truncate_lim, truncate_reward
-        if isinstance(self.truncate_lim, list):
-            self.truncate_lim = torch.Tensor(self.truncate_lim)
+        self.truncate_lim = torch.tensor(self.truncate_lim)
 
         self.seed = seed
         self.save_logs = save_logs
@@ -175,6 +176,10 @@ class MPCAgent():
             #calculate optimal value estimate if required
             # info['entropy'].append(self.entropy)
 
+        if DEBUG:
+            print('\n')
+            import pdb; pdb.set_trace()
+
         self._avg_scores.append(score[0].cpu().numpy())
         self.num_steps += 1
 
@@ -226,10 +231,16 @@ class MPCAgent():
     def generate_rollouts(self, observation):
         open_loop_actions = self.sample_actions_batch(filter_actions=False)
         paths = self.rollout_actions(observation, open_loop_actions, sample_cl_actions=True,
-        obs_buff=self.obs_buff, act_buff=self.act_buff, filter_actions=True)  # , action_batch)
+        obs_buff=self.obs_buff, act_buff=self.act_buff, sample_zero_action=True)  # , action_batch)
         return paths
 
-    def rollout_actions(self, start_obs, open_loop_actions, sample_cl_actions=True, obs_buff=None, act_buff=None, filter_actions=False): # , action_batch):
+    def rollout_actions(self, start_obs, open_loop_actions,
+                        sample_cl_actions=True,
+                        obs_buff=None,
+                        act_buff=None,
+                        filter_actions=True,
+                        sample_zero_action=False):
+
         # open_loop_actions # model x particles x horizon x dim
         ts = timer.time()
         num_models, num_particles, horizon, _ = open_loop_actions.shape
@@ -253,6 +264,9 @@ class MPCAgent():
             ar_filter.at_2 = ar_filter.at_1
             return at_new
 
+        if self.optimize_open_loop and sample_zero_action:
+            open_loop_actions[:,0] = 0.  # always sample a zero action sequence
+
         for t in range(horizon):
             # get open-loop action from shifted mean
             a_ol = open_loop_actions[:, :, t] # model x particles x dim
@@ -265,8 +279,11 @@ class MPCAgent():
                     at = (1.0-self.mixing_factor) * a_policy + self.mixing_factor * a_ol #mixed action
             else:
                 at = a_ol
+
             if filter_actions:
                 at = ar_filter(at, t)
+                at = torch.clip(at, min=-1, max=1)
+
             stp1 = self.learned_model.forward(st, at) # model x particles x dim
             obs_buff[:,:, t,:] = st  # model x particles x horizon x dim
             act_buff[:,:, t,:] = at  # model x particles x horizon x dim
@@ -321,17 +338,21 @@ class MPCAgent():
 
             # pred_err = self.learned_model.compute_delta(paths['observations'], paths['actions'])
             if self.pessimism_mode == "truncation":
-                violations = torch.where(pred_err > self.truncate_lim.view(-1,1,1))
-                dones = paths["dones"]
-                dones[violations] = 1
+                violations = pred_err > self.truncate_lim.view(-1,1,1)
+                violations[:,:,1:] = violations[:,:,0:-1]  # last dim is horizon
+                violations[:,:,0] = False
+                dones = paths["dones"] + violations
+                # violations = torch.where(pred_err > self.truncate_lim.view(-1,1,1))
+                # dones = paths["dones"]
+                # dones[violations] = 1
                 dones = torch.cumsum(dones, dim=-1)
                 dones[dones > 0] = 1.0
                 paths["dones"] = dones
                 paths['terminated'] = torch.any(dones, dim=-1)
                 paths['rewards'] += paths["dones"] * self.truncate_reward
             elif self.pessimism_mode == "bonus":
-                paths['rewards'] -= self.truncate_lim.view(-1,1,1) * pred_err            
-            
+                paths['rewards'] -= self.truncate_lim.view(-1,1,1) * pred_err
+
             paths = self.compute_discounted_return(paths)
 
         if self.save_logs:
@@ -508,6 +529,11 @@ class MPCAgent():
             actions = paths['open_loop_actions']
         else: actions = paths['actions'] #torch.cat([path['actions'].unsqueeze(0) for path in paths], dim=0)
         w = torch.softmax((1.0/self.beta) * paths["discounted_return"], dim=-1)
+
+        if DEBUG:
+            print('  rollout return (mean)', paths["discounted_return"].mean(axis=1))
+            # print('  rollout return  (max)', paths["discounted_return"].max(axis=1)[0])
+
         #Update mean
         weighted_seq = w.T * actions.T
         new_mean = torch.sum(weighted_seq.T, dim=1)
@@ -556,7 +582,6 @@ class MPCAgent():
         action_batch = self.mean_action.unsqueeze(1).repeat(1,self.num_particles, 1, 1) + self.init_std * eps
         if filter_actions:
             action_batch = self.filter_actions(action_batch)
-        # TODO always sample on pure BC policy. Add one zero action one.
         return action_batch
 
     def sample_actions_policy(self, observations, include_noise=False):

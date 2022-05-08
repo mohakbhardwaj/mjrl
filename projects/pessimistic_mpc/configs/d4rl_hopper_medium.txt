@@ -62,8 +62,8 @@
 'hotstart': True,
 'shift_steps': 1,
 'squash_fn': 'clamp',
-'optimize_open_loop': False,
-'pessimism_mode': 'bonus',
+'optimize_open_loop': False, # False, True
+'pessimism_mode': 'bonus', # truncation, bonus
 'filter_coeffs': [0.8, 0.2, 0.0],
 
 }
