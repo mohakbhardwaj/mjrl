@@ -92,6 +92,7 @@ class MPCAgent():
         #to initial values
         self.reset_distribution()
         self.gamma_seq = torch.cumprod(torch.tensor([1.0] + [self.gamma] * (self.horizon - 1)),dim=0).reshape(1, self.horizon)
+
         # self.mvn = MultivariateNormal(
         #     loc=torch.zeros(self.horizon * self.action_dim),
         #     covariance_matrix=self.init_cov * torch.eye(self.horizon * self.action_dim))
@@ -255,6 +256,7 @@ class MPCAgent():
         # open_loop_actions # model x particles x horizon x dim
         ts = timer.time()
         num_models, num_particles, horizon, _ = open_loop_actions.shape
+        gamma_seq = self.gamma_seq
 
         #sample open-loop actions using current means
         if obs_buff is None:
@@ -344,7 +346,6 @@ class MPCAgent():
                             paths['observations'].view(-1, self.observation_dim), # model*particles*horizon x dim
                             paths['actions'].view(-1, self.action_dim)) # model*particles*horizon
             pred_err = pred_err.view(num_models, num_particles, horizon) # model x particles x horizon
-
             # pred_err = self.learned_model.compute_delta(paths['observations'], paths['actions'])
             if self.pessimism_mode == "truncation":
                 violations = pred_err > self.truncate_lim.view(-1,1,1)
@@ -360,9 +361,17 @@ class MPCAgent():
                 paths['terminated'] = torch.any(dones, dim=-1)
                 paths['rewards'] += paths["dones"] * self.truncate_reward
             elif self.pessimism_mode == "bonus":
-                paths['rewards'] -= pred_err / self.truncate_lim.view(-1,1,1)
-
-            paths = self.compute_discounted_return(paths)
+                bonus =  (pred_err / self.truncate_lim.view(-1,1,1)) * (1.0 - paths["dones"])
+                paths['rewards'] -= bonus
+            elif self.pessimism_mode == "discount":
+                termination_prob = 2.0 * (torch.sigmoid(pred_err / self.truncate_lim.view(-1,1,1)) - 0.5)
+                new_discount = self.gamma * (1.0 - termination_prob)
+                new_discount[:,:,0] = 1.0
+                gamma_seq = torch.cumprod(new_discount, dim=-1)
+            # paths = self.compute_discounted_return(paths)
+            #compute discounted returns
+            paths["discounted_return"] = torch.cumsum(
+                    torch.flip(gamma_seq * (paths["rewards"] * (1.0 - paths["dones"])), [-1]), axis=-1)[:, :, -1]
             paths['pred_err'] = pred_err
 
         if self.save_logs:
@@ -558,7 +567,7 @@ class MPCAgent():
         scores, _ = torch.max(paths["discounted_return"], dim=1)  # over particles
         return scores
 
-    def compute_discounted_return(self, paths):
+    def compute_discounted_return(self, paths, gamma_seq):
         rewards = paths['rewards']
         dones = paths['dones']
         # discounted_return1 = torch.zeros(rewards.shape[0], rewards.shape[1], device=self.device)
@@ -574,7 +583,6 @@ class MPCAgent():
         # discounted_return /= self.gamma_seq  # un-scale it to get true discounted return
         # discounted_return2 = discounted_return[:,:,0]
         # paths["discounted_return"] = discounted_return
-
         discounted_return = torch.cumsum(
             torch.flip(self.gamma_seq * (rewards * (1.0 - dones)), [-1]), axis=-1)[:, :, -1]
         # print(torch.equal(discounted_return2, discounted_return3))
