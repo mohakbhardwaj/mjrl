@@ -56,7 +56,7 @@ def _validate_models(ensemble_model, paths):
 def train_dynamics_models(models, paths, slackness=0.1, **job_data):
     """ Train ensemble dynamics model and select early stopping time based on
     uncertainty estimation. """
-    paths = paths[:10]
+
     # Train multiple models indepdently and compose them as a ensemble model.
     info = _train_models(models, paths, **job_data)
 
