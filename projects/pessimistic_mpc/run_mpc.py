@@ -222,9 +222,10 @@ except FileNotFoundError:
 
 if not models_trained:
     ts = timer.time()
-    ensemble_model = train_dynamics_models(models, paths, job_data=job_data)
+    ensemble_model, model_train_info = train_dynamics_models(models, paths, **job_data)
     print('Saving trained dynamics models')
     pickle.dump(ensemble_model, open(os.path.join(OUT_DIR, 'ensemble_model.pickle'), 'wb'))
+    pickle.dump(model_train_info, open(os.path.join(OUT_DIR, 'model_train_info.pickle'), 'wb'))
     tf = timer.time()
     logger.log_kv('model_learning_time', tf-ts)
 

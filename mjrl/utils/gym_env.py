@@ -4,7 +4,7 @@ Wrapper around a gym env that provides convenience functions
 
 import gym
 import numpy as np
-
+import d4rl
 
 class EnvSpec(object):
     def __init__(self, obs_dim, act_dim, horizon):
@@ -15,9 +15,9 @@ class EnvSpec(object):
 
 class GymEnv(object):
     def __init__(self, env, env_kwargs=None,
-                 obs_mask=None, act_repeat=1, 
+                 obs_mask=None, act_repeat=1,
                  *args, **kwargs):
-    
+
         # get the correct env behavior
         if type(env) == str:
             env = gym.make(env)
@@ -91,7 +91,7 @@ class GymEnv(object):
 
     def step(self, action):
         action = action.clip(self.action_space.low, self.action_space.high)
-        if self.act_repeat == 1: 
+        if self.act_repeat == 1:
             obs, cum_reward, done, ifo = self.env.step(action)
         else:
             cum_reward = 0.0

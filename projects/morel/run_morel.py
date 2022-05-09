@@ -111,6 +111,10 @@ if 'termination_function' not in globals():
     termination_function = getattr(e.env.env, "truncate_paths", None)
 if 'obs_mask' in globals(): e.obs_mask = obs_mask
 
+# since the default there becomes the pytorch version
+reward_function = reward_function2
+termination_function = termination_function2
+
 # ===============================================================================
 # Setup policy, model, and agent
 # ===============================================================================
@@ -120,7 +124,7 @@ if job_data['model_file'] is not None:
     models = pickle.load(open(job_data['model_file'], 'rb'))
 else:
     model_trained = False
-    models = [WorldModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+i, 
+    models = [WorldModel(state_dim=e.observation_dim, act_dim=e.action_dim, seed=SEED+i,
                      **job_data) for i in range(job_data['num_models'])]
 
 # Construct policy and set exploration level correctly for NPG
@@ -137,13 +141,13 @@ if 'init_policy' in job_data.keys():
         policy.min_log_std[:] = tensor_utils.tensorize(min_log_std)
         policy.set_param_values(policy.get_param_values())
 else:
-    policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'], 
+    policy = MLP(e.spec, seed=SEED, hidden_sizes=job_data['policy_size'],
                     init_log_std=job_data['init_log_std'], min_log_std=job_data['min_log_std'])
 
 baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=256, epochs=1,  learn_rate=1e-3,
-                       device=job_data['device'])               
+                       device=job_data['device'])
 agent = ModelBasedNPG(learned_model=models, env=e, policy=policy, baseline=baseline, seed=SEED,
-                      normalized_step_size=job_data['step_size'], save_logs=True, 
+                      normalized_step_size=job_data['step_size'], save_logs=True,
                       reward_function=reward_function, termination_function=termination_function,
                       **job_data['npg_hp'])
 
@@ -261,7 +265,7 @@ for outer_iter in range(job_data['num_iter']):
     train_stats = agent.train_step(N=len(init_states), init_states=init_states, **job_data)
     logger.log_kv('train_score', train_stats[0])
     agent.policy.to('cpu')
-    
+
     # evaluate true policy performance
     if job_data['eval_rollouts'] > 0:
         print("Performing validation rollouts ... ")
@@ -311,4 +315,3 @@ for outer_iter in range(job_data['num_iter']):
 pickle.dump(agent, open(OUT_DIR + '/iterations/agent_final.pickle', 'wb'))
 policy.set_transformations(in_scale = 1.0 / e.obs_mask)
 pickle.dump(policy, open(OUT_DIR + '/iterations/policy_final.pickle', 'wb'))
-

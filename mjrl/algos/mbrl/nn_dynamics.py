@@ -85,7 +85,7 @@ class WorldModel:
         return loss.to('cpu').data.numpy()
 
     def fit_dynamics(self, s, a, sp, fit_mb_size, fit_epochs, max_steps=1e4,
-                     set_transformations=True, *args, **kwargs):
+                     set_transformations=True, no_o_whitening=False, *args, **kwargs):
         # move data to correct devices
         assert type(s) == type(a) == type(sp)
         assert s.shape[0] == a.shape[0] == sp.shape[0]
@@ -101,6 +101,9 @@ class WorldModel:
             s_scale, a_scale = torch.mean(torch.abs(s - s_shift), dim=0), torch.mean(torch.abs(a - a_shift), dim=0)
             out_shift = torch.mean(sp-s, dim=0) if self.dynamics_net.residual else torch.mean(sp, dim=0)
             out_scale = torch.mean(torch.abs(sp-s-out_shift), dim=0) if self.dynamics_net.residual else torch.mean(torch.abs(sp-out_shift), dim=0)
+            if no_o_whitening:
+                out_shift = torch.zeros_like(out_shift)
+                out_scale = torch.ones_like(out_scale)
             self.dynamics_net.set_transformations(s_shift, s_scale, a_shift, a_scale, out_shift, out_scale)
 
         # prepare dataf for learning

@@ -13,7 +13,7 @@
 'learn_reward'  :   False,
 'reward_file'   :   './utils/reward_functions/gym_hopper.py',
 
-'pessimism_coef':   1.0,
+'pessimism_coef':   1.0,  # 10.0
 'truncate_reward' : 0.0,
 'exp_notes'     :   'Example to illustrate MOReL on a D4RL task.',
 
@@ -32,6 +32,9 @@
 'fit_epochs'    :   25,
 'refresh_fit'   :   False,
 'max_steps'     :   1e8,
+'no_o_whitening':   True,
+'slackness'     :   0.1,
+'checkpoint_freq' : 1,
 
 # NPG params
 
@@ -51,9 +54,9 @@
 'n_iters': 1,
 'horizon': 20,
 'num_particles': 100,
-'init_cov': 0.1,
+'init_cov': 0.1, # 0.001
 'gamma': 0.999,
-'beta': 10.0, #3.33,
+'beta': 10.0, # 1.0 #3.33,
 'mixing_factor': 0.2, #0.8, #0.6,
 'td_lam': 0.97,
 'step_size_mean': 1.0,

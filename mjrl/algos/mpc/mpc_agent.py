@@ -158,6 +158,12 @@ class MPCAgent():
         else:
             self.reset_distribution()
 
+        if DEBUG:
+            if hasattr(self, 'prev_pred_obs'):
+                real_error = torch.norm(observation - self.prev_pred_obs[:,:,0,], dim=-1)
+                pred_error = self.prev_pred_err[:,:,0] * torch.from_numpy(self.learned_model.train_info['ratio']).to(real_error.device).view(-1,1)
+                print('relative error', (real_error/pred_error).flatten())
+
         # with torch.cuda.amp.autocast(enabled=False):
         with torch.no_grad():
             for _ in range(self.n_iters):
@@ -176,9 +182,9 @@ class MPCAgent():
             #calculate optimal value estimate if required
             # info['entropy'].append(self.entropy)
 
-        if DEBUG:
-            print('\n')
-            import pdb; pdb.set_trace()
+        # if DEBUG:
+        #     print('\n')
+        #     # import pdb; pdb.set_trace()
 
         self._avg_scores.append(score[0].cpu().numpy())
         self.num_steps += 1
@@ -224,7 +230,12 @@ class MPCAgent():
         else:
             raise ValueError('Sampling mode not recognized')
 
-        act_seq = scale_ctrl(act_seq, self.action_lows, self.action_highs, squash_fn=self.squash_fn)
+        # comment out. since it's done in rollout_actions already
+        # act_seq = scale_ctrl(act_seq, self.action_lows, self.action_highs, squash_fn=self.squash_fn)
+
+        if DEBUG:
+            self.prev_pred_err = paths['pred_err']
+            self.prev_pred_obs = paths['observations']
 
         return act_seq
 
@@ -245,9 +256,7 @@ class MPCAgent():
         ts = timer.time()
         num_models, num_particles, horizon, _ = open_loop_actions.shape
 
-
         #sample open-loop actions using current means
-        rollouts = []
         if obs_buff is None:
             obs_buff = torch.zeros(num_models, num_particles, horizon, self.observation_dim, device=self.device)
         if act_buff is None:
@@ -282,7 +291,7 @@ class MPCAgent():
 
             if filter_actions:
                 at = ar_filter(at, t)
-                at = torch.clip(at, min=-1, max=1)
+                at = scale_ctrl(at, self.action_lows, self.action_highs, squash_fn=self.squash_fn)
 
             stp1 = self.learned_model.forward(st, at) # model x particles x dim
             obs_buff[:,:, t,:] = st  # model x particles x horizon x dim
@@ -351,13 +360,13 @@ class MPCAgent():
                 paths['terminated'] = torch.any(dones, dim=-1)
                 paths['rewards'] += paths["dones"] * self.truncate_reward
             elif self.pessimism_mode == "bonus":
-                paths['rewards'] -= self.truncate_lim.view(-1,1,1) * pred_err
+                paths['rewards'] -= pred_err / self.truncate_lim.view(-1,1,1)
 
             paths = self.compute_discounted_return(paths)
+            paths['pred_err'] = pred_err
 
         if self.save_logs:
             self.logger.log_kv('time_sampling', timer.time() - ts)
-
 
         return paths
 
@@ -531,15 +540,21 @@ class MPCAgent():
         w = torch.softmax((1.0/self.beta) * paths["discounted_return"], dim=-1)
 
         if DEBUG:
-            print('  rollout return (mean)', paths["discounted_return"].mean(axis=1))
-            # print('  rollout return  (max)', paths["discounted_return"].max(axis=1)[0])
+            val, ind = w.max(axis=1)
+            # print('argmax ind', ind)
+            # # print('argmax return', paths["discounted_return"][:,ind])
+            # print('  bc   rollout return', paths["discounted_return"][:,0])
+            # print('  max  rollout return', paths["discounted_return"].max(axis=1)[0])
+            # print('  min  rollout return', paths["discounted_return"].min(axis=1)[0])
+            # print('  mean rollout return', paths["discounted_return"].mean(axis=1))
 
         #Update mean
-        weighted_seq = w.T * actions.T
-        new_mean = torch.sum(weighted_seq.T, dim=1)
+        weighted_seq = w[:,:,None,None] * actions
+        new_mean = torch.sum(weighted_seq, dim=1)  # over particles
+        # weighted_seq = w.T * actions.T
+        # new_mean = torch.sum(weighted_seq.T, dim=1)
         self.mean_action = (1.0 - self.step_size_mean) * self.mean_action +\
             self.step_size_mean * new_mean
-
         scores, _ = torch.max(paths["discounted_return"], dim=1)  # over particles
         return scores
 
