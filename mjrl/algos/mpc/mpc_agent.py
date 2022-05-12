@@ -52,7 +52,7 @@ class MPCAgent():
         # self.reward_function2 = reward_function2
         self.termination_function2 = termination_function2
         self.truncate_lim, self.truncate_reward = truncate_lim, truncate_reward
-        self.truncate_lim = torch.tensor(self.truncate_lim)
+        self.truncate_lim = torch.tensor(self.truncate_lim) if self.truncate_lim is not None else None
 
         self.seed = seed
         self.save_logs = save_logs
@@ -69,7 +69,7 @@ class MPCAgent():
         self.n_iters = self.mpc_params['n_iters']
         self.horizon = self.mpc_params['horizon']
         self.num_particles = self.mpc_params['num_particles']
-        self.init_cov = self.mpc_params['init_cov']
+        self.init_std = self.mpc_params['init_std']
         self.gamma = self.mpc_params['gamma']
         self.beta = self.mpc_params['beta']
         self.td_lam = self.mpc_params['td_lam']
@@ -83,11 +83,16 @@ class MPCAgent():
         self.mixing_factor = self.mpc_params['mixing_factor']
         self.optimize_open_loop = self.mpc_params['optimize_open_loop']
         self.pessimism_mode = self.mpc_params['pessimism_mode']
+        self.epsilon = self.mpc_params['epsilon']
 
         #set the initial mean and covariance of mpc
-        self.init_mean = torch.zeros((self.num_models, self.horizon, self.action_dim))
-        self.init_cov = torch.tensor(self.init_cov)
-        self.init_std = torch.sqrt(self.init_cov)
+        self.num_means = self.num_models
+        if self.pessimism_mode == 'min_return':
+            self.num_means = 1
+        self.init_mean = torch.zeros((self.num_means, self.horizon, self.action_dim))
+        # self.init_cov = torch.tensor(self.init_cov)
+        # self.init_std = torch.sqrt(self.init_cov)
+        self.init_std = torch.tensor(self.init_std)
         #calling reset distribution sets current mean and cov
         #to initial values
         self.reset_distribution()
@@ -102,7 +107,7 @@ class MPCAgent():
         self.act_buff = torch.zeros(self.num_models, self.num_particles, self.horizon, self.action_dim)
         self.obs_buff2 = torch.zeros(self.num_models, 1, self.horizon, self.observation_dim)
         self.act_buff2 = torch.zeros(self.num_models, 1, self.horizon, self.action_dim)
-
+        self.worst_model_idx = -1 #only used when pessimism_mode is 'min_return'
         self.to(device)
         if save_logs: self.logger = DataLog()
 
@@ -121,19 +126,20 @@ class MPCAgent():
             self.sampling_policy.to(device)
         except:
             pass
-        self.init_mean, self.init_cov = self.init_mean.to(device), self.init_cov.to(device)
-        self.init_std = self.init_std.to(device)
-        self.mean_action, self.cov_action = self.mean_action.to(device), self.cov_action.to(device)
+        self.init_mean, self.init_std = self.init_mean.to(device), self.init_std.to(device)
+        # self.init_std = self.init_std.to(device)
+        self.mean_action, self.std_action = self.mean_action.to(device), self.std_action.to(device)
         self.gamma_seq = self.gamma_seq.to(device)
         self.sample_shape = torch.Size([self.num_particles], device=device)
         self.action_lows, self.action_highs, self.action_range = self.action_lows.to(device), self.action_highs.to(device), self.action_range.to(device)
-        self.mvn = MultivariateNormal(
-            loc=torch.zeros(self.horizon * self.action_dim, device=device),
-            covariance_matrix=self.init_cov * torch.eye(self.horizon * self.action_dim, device=device))
+        # self.mvn = MultivariateNormal(
+        #     loc=torch.zeros(self.horizon * self.action_dim, device=device),
+        #     covariance_matrix=self.init_cov * torch.eye(self.horizon * self.action_dim, device=device))
         self.sampling_policy.to(device)
         self.obs_buff, self.act_buff = self.obs_buff.to(device), self.act_buff.to(device)
         self.obs_buff2, self.act_buff2 = self.obs_buff2.to(device), self.act_buff2.to(device)
-        self.truncate_lim = self.truncate_lim.to(device)
+        if self.truncate_lim is not None:
+            self.truncate_lim = self.truncate_lim.to(device)
         self.device = device
 
     def is_cuda(self):
@@ -167,13 +173,15 @@ class MPCAgent():
 
         # with torch.cuda.amp.autocast(enabled=False):
         with torch.no_grad():
+            #at iter 0 we rollout the mean of current policy to get its value estimates
+
             for _ in range(self.n_iters):
                 # generate random simulated trajectories
                 paths = self.generate_rollouts(observation)
 
                 # update distribution parameters
                 with profiler.record_function("mppi_update"):
-                    score = self.update_distribution(paths)
+                    score = self.update_distribution(observation, paths)
 
                 # check if converged
                 if self.check_convergence():
@@ -194,6 +202,12 @@ class MPCAgent():
 
 
     def get_action_seq(self, observation, mode='mean'):
+        if self.pessimism_mode == 'min_return':
+            paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
+                1), sample_cl_actions=self.optimize_open_loop,
+                # obs_buff=self.obs_buff2, act_buff=self.act_buff2,
+                model_idx=self.worst_model_idx)
+            return paths["actions"].squeeze(0).squeeze(0)
         if mode == 'best_mean':
             paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
                 1), sample_cl_actions=self.optimize_open_loop,
@@ -205,12 +219,20 @@ class MPCAgent():
                 1), sample_cl_actions=self.optimize_open_loop,
             obs_buff=self.obs_buff2, act_buff=self.act_buff2)
             worst_idx = torch.argmin(paths['discounted_return'])
+            # print(paths['discounted_return'], worst_idx)
             act_seq = paths["actions"][worst_idx].squeeze(0) #self.mean_action[worst_idx].clone()
         elif mode == 'softmax_mean':
             paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
                 1), sample_cl_actions=self.optimize_open_loop,
                 obs_buff=self.obs_buff2, act_buff=self.act_buff2)
-            weights = torch.softmax((1.0 / self.beta) *  returns, dim=0)
+            weights = torch.softmax((1.0 / self.beta) *  paths['discounted_return'], dim=0)
+            weighted_mean = (weights.T * self.mean_action.T).T
+            act_seq = torch.sum(weighted_mean, dim=0).clone()
+        elif mode == "softmin_mean":
+            paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
+                1), sample_cl_actions=self.optimize_open_loop,
+            obs_buff=self.obs_buff2, act_buff=self.act_buff2)
+            weights = torch.softmax((-1.0 / self.beta) *  paths['discounted_return'], dim=0)
             weighted_mean = (weights.T * self.mean_action.T).T
             act_seq = torch.sum(weighted_mean, dim=0).clone()
         elif mode == 'random_mean':
@@ -251,7 +273,8 @@ class MPCAgent():
                         obs_buff=None,
                         act_buff=None,
                         filter_actions=True,
-                        sample_zero_action=False):
+                        sample_zero_action=False,
+                        model_idx = -1):
 
         # open_loop_actions # model x particles x horizon x dim
         ts = timer.time()
@@ -296,6 +319,8 @@ class MPCAgent():
                 at = scale_ctrl(at, self.action_lows, self.action_highs, squash_fn=self.squash_fn)
 
             stp1 = self.learned_model.forward(st, at) # model x particles x dim
+            if model_idx > -1:
+                stp1 = stp1[model_idx]
             obs_buff[:,:, t,:] = st  # model x particles x horizon x dim
             act_buff[:,:, t,:] = at  # model x particles x horizon x dim
             st = stp1
@@ -329,7 +354,7 @@ class MPCAgent():
         else:
             paths["terminated"] = torch.zeros(paths["observations"].shape[0])
 
-        if self.truncate_lim is not None and len(self.learned_model) > 1:
+        if self.truncate_lim is not None and len(self.learned_model) > 1 and (self.pessimism_mode != 'min_return') :
             # pred_err = torch.zeros(self.num_models, num_particles, horizon-1, device=self.device)
             # s = paths['observations'][:,:,:-1]
             # a = paths['actions'][:,:,:-1] #.unsqueeze(0).repeat(self.num_models, 1, 1, 1)
@@ -369,18 +394,242 @@ class MPCAgent():
                 new_discount[:,:,0] = 1.0
                 gamma_seq = torch.cumprod(new_discount, dim=-1)
             # paths = self.compute_discounted_return(paths)
-            #compute discounted returns
-            paths["discounted_return"] = torch.cumsum(
-                    torch.flip(gamma_seq * (paths["rewards"] * (1.0 - paths["dones"])), [-1]), axis=-1)[:, :, -1]
+            #compute discounted returns    
             paths['pred_err'] = pred_err
+        
+        disc_return = torch.cumsum(
+                    torch.flip(gamma_seq * (paths["rewards"] * (1.0 - paths["dones"])), [-1]), axis=-1)[:, :, -1]
 
+        # if self.pessimism_mode == 'min_return' and model_idx == -1:
+        #     #average disc return of each gaussian
+        #     disc_return_avg = torch.mean(disc_return, dim=-1)
+        #     #worst performing mean
+        #     self.worst_model_idx = torch.argmin(disc_return_avg)
+
+        #     paths["actions"] = paths["actions"][self.worst_model_idx].unsqueeze(0)
+        #     paths["observations"] = paths["observations"][self.worst_model_idx].unsqueeze(0)
+        #     paths["rewards"] = paths["rewards"][self.worst_model_idx].unsqueeze(0)
+        #     paths['open_loop_actions'] = paths['open_loop_actions'][self.worst_model_idx].unsqueeze(0)
+        #     disc_return = disc_return[self.worst_model_idx].unsqueeze(0)
+
+        paths["discounted_return"] = disc_return
         if self.save_logs:
             self.logger.log_kv('time_sampling', timer.time() - ts)
 
         return paths
 
+    def update_distribution(self, observation, paths):
+        if self.optimize_open_loop:
+            actions = paths['open_loop_actions']
+        else: actions = paths['actions'] #torch.cat([path['actions'].unsqueeze(0) for path in paths], dim=0)
+        w = torch.softmax((1.0/self.beta) * paths["discounted_return"], dim=-1)
+        if DEBUG:
+            val, ind = w.max(axis=1)
+            # print('argmax ind', ind)
+            # # print('argmax return', paths["discounted_return"][:,ind])
+            # print('  bc   rollout return', paths["discounted_return"][:,0])
+            # print('  max  rollout return', paths["discounted_return"].max(axis=1)[0])
+            # print('  min  rollout return', paths["discounted_return"].min(axis=1)[0])
+            # print('  mean rollout return', paths["discounted_return"].mean(axis=1))
 
-    # def rollout_actions(self, start_obs, open_loop_actions, sample_cl_actions=True): # , action_batch):
+        #Update mean
+        weighted_seq = w[:,:,None,None] * actions
+        new_mean = torch.sum(weighted_seq, dim=1)  # over particles
+        # weighted_seq = w.T * actions.T
+        # new_mean = torch.sum(weighted_seq.T, dim=1)
+        if self.pessimism_mode == "min_return":
+            #discounted return of current policy
+            base_disc_return = paths["discounted_return"][:,0]
+            #rollout new_mean to get its discounted return
+            paths_new = self.rollout_actions(observation, new_mean.unsqueeze(
+                1), sample_cl_actions=self.optimize_open_loop,
+                obs_buff=self.obs_buff2, act_buff=self.act_buff2)
+            new_mean_disc_return = paths_new["discounted_return"][:,0]
+            #value difference
+            val_difference = new_mean_disc_return - base_disc_return
+            #select mean with max value difference
+            max_perf_gap, self.worst_model_idx = torch.max(val_difference, dim=0)
+            if max_perf_gap.item() >= self.epsilon:
+                new_mean = new_mean[self.worst_model_idx]
+            else:
+                new_mean = self.mean_action
+
+        self.mean_action = (1.0 - self.step_size_mean) * self.mean_action +\
+                self.step_size_mean * new_mean
+        scores, _ = torch.max(paths["discounted_return"], dim=1)  # over particles
+        return scores
+
+    # def compute_discounted_return(self, paths, gamma_seq):
+    #     rewards = paths['rewards']
+    #     dones = paths['dones']
+    #     # discounted_return1 = torch.zeros(rewards.shape[0], rewards.shape[1], device=self.device)
+    #     # for i in range(self.horizon):
+    #         # discounted_return1 += (self.gamma**i) * rewards[:, :, i] * (1.0 - dones[:, :,i])
+    #     # paths["discounted_return"] = discounted_return1
+
+    #     # discounted_return = self.gamma_seq * (rewards * (1.0 - dones))  # discounted reward sequence
+    #     # print(discounted_return[0][0], torch.flip(discounted_return, [-1])[0][0])
+    #     # input('....')
+    #     # discounted return (but scaled by [1 , gamma, gamma*2 and so on])
+    #     # discounted_return = torch.flip(torch.cumsum(torch.flip(discounted_return, [-1]), axis=-1), [-1])
+    #     # discounted_return /= self.gamma_seq  # un-scale it to get true discounted return
+    #     # discounted_return2 = discounted_return[:,:,0]
+    #     # paths["discounted_return"] = discounted_return
+    #     discounted_return = torch.cumsum(
+    #         torch.flip(self.gamma_seq * (rewards * (1.0 - dones)), [-1]), axis=-1)[:, :, -1]
+    #     paths['discounted_return'] = discounted_return
+    #     return paths
+
+    def control_costs(self, delta):
+        pass
+
+    def sample_actions_batch(self, filter_actions=False):
+        """
+        sample batch of open-loop actions from current mean
+        """
+        # delta = self.mvn.sample(self.sample_shape)
+        # delta = delta.view(delta.shape[0], self.horizon, self.action_dim)
+        eps = torch.randn(self.num_models, self.num_particles, self.horizon, self.action_dim, device=self.device)
+        eps[:,0] = torch.zeros_like(eps[:,0]) #set first particle to be zeros
+        action_batch = self.mean_action.unsqueeze(1).repeat(1,self.num_particles, 1, 1) + self.init_std * eps
+        if filter_actions:
+            action_batch = self.filter_actions(action_batch)
+        return action_batch
+
+    def sample_actions_policy(self, observations, include_noise=False):
+        # assert type(observation) == np.ndarray
+        # if self.device != 'cpu':
+        #     print("Warning: get_action function should be used only for simulation.")
+        #     print("Requires policy on CPU. Changing policy device to CPU.")
+        #     self.to('cpu')
+        # o = np.float32(observation.reshape(1, -1))
+        # self.obs_var.data = torch.from_numpy(o)
+        with torch.no_grad():
+            mean = self.sampling_policy.forward(observations)
+            eps = torch.randn_like(mean)
+            noise = torch.exp(self.sampling_policy.log_std) * eps
+            action = mean + noise * include_noise
+        return action, {'mean': mean, 'log_std': self.sampling_policy.log_std_val, 'evaluation': mean}
+
+    def filter_actions(self, action_batch):
+        beta_0, beta_1, beta_2 = self.filter_coeffs
+        action_batch[:,:,0] *=  (beta_0 + beta_1 + beta_2)
+        action_batch[:,:,1] = beta_0 * action_batch[:,:,1] + (beta_1 + beta_2) * action_batch[:,:,0]
+        for i in range(2, action_batch.shape[2]):
+            action_batch[:,:,i] = beta_0*action_batch[:,:,i] + beta_1*action_batch[:,:,i-1] + beta_2*action_batch[:,:,i-2]
+        return action_batch
+
+
+    def shift(self, shift_steps):
+        self.mean_action = self.mean_action.roll(-shift_steps, 1)
+        if self.base_action == 'random':
+            # self.mean_action[-1] = self.generate_noise(shape=torch.Size((1, 1)),
+            #                                            base_seed=self.seed_val + 123*self.num_steps)
+            self.mean_action[:,-shift_steps:] = self.action_range * torch.rand(self.num_models, shift_steps, self.action_dim, device=self.device) + self.action_lows
+        elif self.base_action == 'null':
+            self.mean_action[:,-shift_steps:].zero_()
+        elif self.base_action == 'repeat':
+            self.mean_action[:,-shift_steps:] = self.mean_action[:, -shift_steps - 1].unsqueeze(1).repeat(1,shift_steps,1)#clone()
+        else:
+            raise NotImplementedError(
+                "invalid option for base action during shift")
+
+    def reset_distribution(self):
+        self.mean_action = self.init_mean.clone()
+        self.std_action = self.init_std.clone()
+
+    def reset(self):
+        self.reset_distribution()
+        self.num_steps = 0
+        self._avg_scores = []
+
+    def check_convergence(self):
+        return False
+
+
+    # def evaluate_act_sequences(self, start_obs, action_batch):
+    #     """
+    #         Takes an action_batch of size [num_models x horizon x d_act]
+    #         and returns the discounted cost to go for each of them
+    #         as predicted by the corresponding model with proper termination
+    #         using disagreement.
+    #     """
+    #     ts = timer.time()
+
+    #     rollouts = []
+
+    #     for m, model in enumerate(self.learned_model):
+    #         obs = torch.zeros(1, self.horizon, self.observation_dim, device=self.device)
+    #         act_b = action_batch[m, :, :, :]
+    #         st = start_obs.clone().unsqueeze(0)
+
+    #         for t in range(self.horizon):
+    #             at = act_b[:, t, :]
+    #             stp1 = model.forward(st, at)
+    #             obs[:, t, :] = st.clone()
+    #             st = stp1
+
+    #         model_rollouts = dict(observations=obs, actions=act_b)
+
+    #         #here we compute rewards and terminations for the paths
+    #         # use learned reward function if available
+    #         if model.learn_reward:
+    #             model.compute_path_rewards(model_rollouts)
+    #         else:
+    #             model_rollouts = self.reward_function(model_rollouts)
+    #             # scale by action repeat if necessary
+    #             model_rollouts["rewards"] = model_rollouts["rewards"] * \
+    #                 self.env.act_repeat
+    #         rollouts.append(model_rollouts)
+
+    #     #concatenate all the rollouts
+    #     paths = dict()
+    #     for key in rollouts[0].keys():
+    #         paths[key] = torch.cat([rollout[key].unsqueeze(0)
+    #                                for rollout in rollouts])
+
+    #     # # NOTE: If tasks have termination condition, we will assume that the env has
+    #     # # a function that can terminate paths appropriately.
+    #     # # Otherwise, termination is not considered.
+    #     if callable(self.termination_function):
+    #         paths = self.termination_function(paths)
+    #     else:
+    #         paths["terminated"] = torch.zeros(paths["observations"].shape[0])
+
+    #     if self.truncate_lim is not None and len(self.learned_model) > 1:
+    #         pred_err = torch.zeros(
+    #             self.num_models, 1, self.horizon-1, device=self.device)
+
+    #         s = paths['observations'][:, :, :-1]
+    #         a = paths['actions'][:, :, :-1]
+    #         s_next = paths['observations'][:, :, :-1]
+    #         for idx_1, model_1 in enumerate(self.learned_model):
+    #             pred_1 = model_1.forward(s, a)
+    #             for idx_2, model_2 in enumerate(self.learned_model):
+    #                 if idx_2 > idx_1:
+    #                     pred_2 = model_2.forward(s, a)
+    #                     model_err = torch.norm(
+    #                         (pred_1 - pred_2), dim=-1, p=2)
+    #                     pred_err = torch.maximum(pred_err, model_err)
+
+    #         violations = torch.where(pred_err > self.truncate_lim)
+    #         dones = paths["dones"]
+    #         dones[violations] = 1
+    #         dones = torch.cumsum(dones, dim=-1)
+    #         dones[dones > 0] = 1.0
+    #         paths["dones"] = dones
+    #         # print(paths["dones"].shape, paths["rewards"].shape)
+    #         paths['terminated'] = torch.any(dones, dim=-1)
+    #         paths['rewards'] += paths["dones"] * self.truncate_reward
+
+    #         paths = self.compute_discounted_return(paths)
+    #     if self.save_logs:
+    #         self.logger.log_kv('time_mean_evaluation', timer.time() - ts)
+    #     return paths["discounted_return"]
+
+
+
+   # def rollout_actions(self, start_obs, open_loop_actions, sample_cl_actions=True): # , action_batch):
     #     #Mohak - right now we only use the first model.
     #     # paths = []
     #     ts = timer.time()
@@ -541,199 +790,3 @@ class MPCAgent():
     #     # paths = [path for path in paths if path['observations'].shape[0] >= 5]
 
     #     return paths
-
-    def update_distribution(self, paths):
-        if self.optimize_open_loop:
-            actions = paths['open_loop_actions']
-        else: actions = paths['actions'] #torch.cat([path['actions'].unsqueeze(0) for path in paths], dim=0)
-        w = torch.softmax((1.0/self.beta) * paths["discounted_return"], dim=-1)
-
-        if DEBUG:
-            val, ind = w.max(axis=1)
-            # print('argmax ind', ind)
-            # # print('argmax return', paths["discounted_return"][:,ind])
-            # print('  bc   rollout return', paths["discounted_return"][:,0])
-            # print('  max  rollout return', paths["discounted_return"].max(axis=1)[0])
-            # print('  min  rollout return', paths["discounted_return"].min(axis=1)[0])
-            # print('  mean rollout return', paths["discounted_return"].mean(axis=1))
-
-        #Update mean
-        weighted_seq = w[:,:,None,None] * actions
-        new_mean = torch.sum(weighted_seq, dim=1)  # over particles
-        # weighted_seq = w.T * actions.T
-        # new_mean = torch.sum(weighted_seq.T, dim=1)
-        self.mean_action = (1.0 - self.step_size_mean) * self.mean_action +\
-            self.step_size_mean * new_mean
-        scores, _ = torch.max(paths["discounted_return"], dim=1)  # over particles
-        return scores
-
-    def compute_discounted_return(self, paths, gamma_seq):
-        rewards = paths['rewards']
-        dones = paths['dones']
-        # discounted_return1 = torch.zeros(rewards.shape[0], rewards.shape[1], device=self.device)
-        # for i in range(self.horizon):
-            # discounted_return1 += (self.gamma**i) * rewards[:, :, i] * (1.0 - dones[:, :,i])
-        # paths["discounted_return"] = discounted_return1
-
-        # discounted_return = self.gamma_seq * (rewards * (1.0 - dones))  # discounted reward sequence
-        # print(discounted_return[0][0], torch.flip(discounted_return, [-1])[0][0])
-        # input('....')
-        # discounted return (but scaled by [1 , gamma, gamma*2 and so on])
-        # discounted_return = torch.flip(torch.cumsum(torch.flip(discounted_return, [-1]), axis=-1), [-1])
-        # discounted_return /= self.gamma_seq  # un-scale it to get true discounted return
-        # discounted_return2 = discounted_return[:,:,0]
-        # paths["discounted_return"] = discounted_return
-        discounted_return = torch.cumsum(
-            torch.flip(self.gamma_seq * (rewards * (1.0 - dones)), [-1]), axis=-1)[:, :, -1]
-        # print(torch.equal(discounted_return2, discounted_return3))
-        # print(torch.equal(discounted_return1, discounted_return3))
-        # print(torch.any(dones))
-        # input('....')
-        paths['discounted_return'] = discounted_return
-        return paths
-
-    def control_costs(self, delta):
-        pass
-
-    def sample_actions_batch(self, filter_actions=False):
-        """
-        sample batch of open-loop actions from current mean
-        """
-        # delta = self.mvn.sample(self.sample_shape)
-        # delta = delta.view(delta.shape[0], self.horizon, self.action_dim)
-        eps = torch.randn(self.num_models, self.num_particles, self.horizon, self.action_dim, device=self.device)
-        action_batch = self.mean_action.unsqueeze(1).repeat(1,self.num_particles, 1, 1) + self.init_std * eps
-        if filter_actions:
-            action_batch = self.filter_actions(action_batch)
-        return action_batch
-
-    def sample_actions_policy(self, observations, include_noise=False):
-        # assert type(observation) == np.ndarray
-        # if self.device != 'cpu':
-        #     print("Warning: get_action function should be used only for simulation.")
-        #     print("Requires policy on CPU. Changing policy device to CPU.")
-        #     self.to('cpu')
-        # o = np.float32(observation.reshape(1, -1))
-        # self.obs_var.data = torch.from_numpy(o)
-        with torch.no_grad():
-            mean = self.sampling_policy.forward(observations)
-            eps = torch.randn_like(mean)
-            noise = torch.exp(self.sampling_policy.log_std) * eps
-            action = mean + noise * include_noise
-        return action, {'mean': mean, 'log_std': self.sampling_policy.log_std_val, 'evaluation': mean}
-
-    def filter_actions(self, action_batch):
-        beta_0, beta_1, beta_2 = self.filter_coeffs
-        action_batch[:,:,0] *=  (beta_0 + beta_1 + beta_2)
-        action_batch[:,:,1] = beta_0 * action_batch[:,:,1] + (beta_1 + beta_2) * action_batch[:,:,0]
-        for i in range(2, action_batch.shape[2]):
-            action_batch[:,:,i] = beta_0*action_batch[:,:,i] + beta_1*action_batch[:,:,i-1] + beta_2*action_batch[:,:,i-2]
-        return action_batch
-
-
-    def shift(self, shift_steps):
-        self.mean_action = self.mean_action.roll(-shift_steps, 1)
-        if self.base_action == 'random':
-            # self.mean_action[-1] = self.generate_noise(shape=torch.Size((1, 1)),
-            #                                            base_seed=self.seed_val + 123*self.num_steps)
-            self.mean_action[:,-shift_steps:] = self.action_range * torch.rand(self.num_models, shift_steps, self.action_dim, device=self.device) + self.action_lows
-        elif self.base_action == 'null':
-            self.mean_action[:,-shift_steps:].zero_()
-        elif self.base_action == 'repeat':
-            self.mean_action[:,-shift_steps:] = self.mean_action[:, -shift_steps - 1].unsqueeze(1).repeat(1,shift_steps,1)#clone()
-        else:
-            raise NotImplementedError(
-                "invalid option for base action during shift")
-
-    def reset_distribution(self):
-        self.mean_action = self.init_mean.clone()
-        self.cov_action = self.init_cov.clone()
-
-    def reset(self):
-        self.reset_distribution()
-        self.num_steps = 0
-        self._avg_scores = []
-
-    def check_convergence(self):
-        return False
-
-
-    # def evaluate_act_sequences(self, start_obs, action_batch):
-    #     """
-    #         Takes an action_batch of size [num_models x horizon x d_act]
-    #         and returns the discounted cost to go for each of them
-    #         as predicted by the corresponding model with proper termination
-    #         using disagreement.
-    #     """
-    #     ts = timer.time()
-
-    #     rollouts = []
-
-    #     for m, model in enumerate(self.learned_model):
-    #         obs = torch.zeros(1, self.horizon, self.observation_dim, device=self.device)
-    #         act_b = action_batch[m, :, :, :]
-    #         st = start_obs.clone().unsqueeze(0)
-
-    #         for t in range(self.horizon):
-    #             at = act_b[:, t, :]
-    #             stp1 = model.forward(st, at)
-    #             obs[:, t, :] = st.clone()
-    #             st = stp1
-
-    #         model_rollouts = dict(observations=obs, actions=act_b)
-
-    #         #here we compute rewards and terminations for the paths
-    #         # use learned reward function if available
-    #         if model.learn_reward:
-    #             model.compute_path_rewards(model_rollouts)
-    #         else:
-    #             model_rollouts = self.reward_function(model_rollouts)
-    #             # scale by action repeat if necessary
-    #             model_rollouts["rewards"] = model_rollouts["rewards"] * \
-    #                 self.env.act_repeat
-    #         rollouts.append(model_rollouts)
-
-    #     #concatenate all the rollouts
-    #     paths = dict()
-    #     for key in rollouts[0].keys():
-    #         paths[key] = torch.cat([rollout[key].unsqueeze(0)
-    #                                for rollout in rollouts])
-
-    #     # # NOTE: If tasks have termination condition, we will assume that the env has
-    #     # # a function that can terminate paths appropriately.
-    #     # # Otherwise, termination is not considered.
-    #     if callable(self.termination_function):
-    #         paths = self.termination_function(paths)
-    #     else:
-    #         paths["terminated"] = torch.zeros(paths["observations"].shape[0])
-
-    #     if self.truncate_lim is not None and len(self.learned_model) > 1:
-    #         pred_err = torch.zeros(
-    #             self.num_models, 1, self.horizon-1, device=self.device)
-
-    #         s = paths['observations'][:, :, :-1]
-    #         a = paths['actions'][:, :, :-1]
-    #         s_next = paths['observations'][:, :, :-1]
-    #         for idx_1, model_1 in enumerate(self.learned_model):
-    #             pred_1 = model_1.forward(s, a)
-    #             for idx_2, model_2 in enumerate(self.learned_model):
-    #                 if idx_2 > idx_1:
-    #                     pred_2 = model_2.forward(s, a)
-    #                     model_err = torch.norm(
-    #                         (pred_1 - pred_2), dim=-1, p=2)
-    #                     pred_err = torch.maximum(pred_err, model_err)
-
-    #         violations = torch.where(pred_err > self.truncate_lim)
-    #         dones = paths["dones"]
-    #         dones[violations] = 1
-    #         dones = torch.cumsum(dones, dim=-1)
-    #         dones[dones > 0] = 1.0
-    #         paths["dones"] = dones
-    #         # print(paths["dones"].shape, paths["rewards"].shape)
-    #         paths['terminated'] = torch.any(dones, dim=-1)
-    #         paths['rewards'] += paths["dones"] * self.truncate_reward
-
-    #         paths = self.compute_discounted_return(paths)
-    #     if self.save_logs:
-    #         self.logger.log_kv('time_mean_evaluation', timer.time() - ts)
-    #     return paths["discounted_return"]

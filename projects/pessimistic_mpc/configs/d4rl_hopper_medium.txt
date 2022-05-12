@@ -13,8 +13,8 @@
 'learn_reward'  :   False,
 'reward_file'   :   './utils/reward_functions/gym_hopper.py',
 
-'pessimism_coef':   1.0,  # 10.0
-'truncate_reward' : 0.0,
+#'pessimism_coef':   1.0,  # 10.0
+#'truncate_reward' : 0.0,
 'exp_notes'     :   'Example to illustrate MOReL on a D4RL task.',
 
 #behavior cloning
@@ -52,21 +52,23 @@
 # MPC Params
 'mpc_params': {
 'n_iters': 1,
-'horizon': 20,
+'horizon': 10,
 'num_particles': 100,
-'init_cov': 0.1, # 0.001
+#'init_cov': 0.001, # 0.001
+'init_std': 0.01,
 'gamma': 0.999,
 'beta': 3.33, # 1.0 #3.33,
 'mixing_factor': 0.2, #0.8, #0.6,
 'td_lam': 0.97,
 'step_size_mean': 1.0,
-'sample_mode': 'best_mean',
+'sample_mode': 'none',
 'base_action': 'repeat',
 'hotstart': True,
 'shift_steps': 1,
 'squash_fn': 'clamp',
-'optimize_open_loop': False, # False, True
-'pessimism_mode': 'discount', # truncation, bonus
+'optimize_open_loop': True, # False, True
+'pessimism_mode': 'min_return', # truncation, bonus, discount
+'epsilon': 0.001, 
 'filter_coeffs': [0.8, 0.2, 0.0],
 
 }
