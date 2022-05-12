@@ -107,6 +107,8 @@ class MPCAgent():
         self.act_buff = torch.zeros(self.num_models, self.num_particles, self.horizon, self.action_dim)
         self.obs_buff2 = torch.zeros(self.num_models, 1, self.horizon, self.observation_dim)
         self.act_buff2 = torch.zeros(self.num_models, 1, self.horizon, self.action_dim)
+        self.obs_buff3 = torch.zeros(self.num_models, self.num_models, self.horizon, self.observation_dim)
+        self.act_buff3 = torch.zeros(self.num_models, self.num_models, self.horizon, self.action_dim)
         self.worst_model_idx = -1 #only used when pessimism_mode is 'min_return'
         self.to(device)
         if save_logs: self.logger = DataLog()
@@ -138,6 +140,7 @@ class MPCAgent():
         self.sampling_policy.to(device)
         self.obs_buff, self.act_buff = self.obs_buff.to(device), self.act_buff.to(device)
         self.obs_buff2, self.act_buff2 = self.obs_buff2.to(device), self.act_buff2.to(device)
+        self.obs_buff3, self.act_buff3 = self.obs_buff3.to(device), self.act_buff3.to(device)
         if self.truncate_lim is not None:
             self.truncate_lim = self.truncate_lim.to(device)
         self.device = device
@@ -394,9 +397,9 @@ class MPCAgent():
                 new_discount[:,:,0] = 1.0
                 gamma_seq = torch.cumprod(new_discount, dim=-1)
             # paths = self.compute_discounted_return(paths)
-            #compute discounted returns    
+            #compute discounted returns
             paths['pred_err'] = pred_err
-        
+
         disc_return = torch.cumsum(
                     torch.flip(gamma_seq * (paths["rewards"] * (1.0 - paths["dones"])), [-1]), axis=-1)[:, :, -1]
 
@@ -435,27 +438,29 @@ class MPCAgent():
         #Update mean
         weighted_seq = w[:,:,None,None] * actions
         new_mean = torch.sum(weighted_seq, dim=1)  # over particles
+        new_mean = (1.0 - self.step_size_mean) * self.mean_action + self.step_size_mean * new_mean  # generate candiates
         # weighted_seq = w.T * actions.T
         # new_mean = torch.sum(weighted_seq.T, dim=1)
         if self.pessimism_mode == "min_return":
             #discounted return of current policy
-            base_disc_return = paths["discounted_return"][:,0]
+            base_disc_return = paths["discounted_return"][:,0]  # the mean policy
             #rollout new_mean to get its discounted return
-            paths_new = self.rollout_actions(observation, new_mean.unsqueeze(
-                1), sample_cl_actions=self.optimize_open_loop,
-                obs_buff=self.obs_buff2, act_buff=self.act_buff2)
-            new_mean_disc_return = paths_new["discounted_return"][:,0]
+            paths_new = self.rollout_actions(observation, new_mean.unsqueeze(0).repeat(self.num_models,1,1,1),
+                            sample_cl_actions=self.optimize_open_loop, obs_buff=self.obs_buff3, act_buff=self.act_buff3)
+            new_mean_disc_return = paths_new["discounted_return"]  # models x policy
             #value difference
-            val_difference = new_mean_disc_return - base_disc_return
+            val_difference, _ = (new_mean_disc_return - base_disc_return.view(1,-1)).min(axis=0)
             #select mean with max value difference
             max_perf_gap, self.worst_model_idx = torch.max(val_difference, dim=0)
+
+            # check whether to accept the candidate
             if max_perf_gap.item() >= self.epsilon:
-                new_mean = new_mean[self.worst_model_idx]
+                # print(max_perf_gap.item())
+                new_mean = new_mean[self.worst_model_idx].unsqueeze(0)
             else:
                 new_mean = self.mean_action
 
-        self.mean_action = (1.0 - self.step_size_mean) * self.mean_action +\
-                self.step_size_mean * new_mean
+        self.mean_action = new_mean # (1.0 - self.step_size_mean) * self.mean_action +\self.step_size_mean * new_mean
         scores, _ = torch.max(paths["discounted_return"], dim=1)  # over particles
         return scores
 
