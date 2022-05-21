@@ -16,8 +16,8 @@ def reward_function(paths):
     # obs = torch.clip(paths["observations"], -10.0, 10.0)
     # act = paths["actions"].clip(-1.0, 1.0)
     obs = paths["observations"]
-    act = paths["actions"].clip(-1.0, 1.0)
-    vel_x = obs[:, :, :, -6] / 0.02
+    act = paths["actions"]#.clip(-1.0, 1.0)
+    vel_x = obs[:, :, :, -6] / 0.02 # / 0.02
     power = torch.square(act).sum(axis=-1)
     height = obs[:, :, :, 0]
     ang = obs[:, :, :, 1]

@@ -7,6 +7,7 @@ from mjrl.algos.mbrl.model_based_npg import ModelBasedNPG
 from mjrl.algos.mpc.mpc_agent import MPCAgent
 from mjrl.algos.mbrl.nn_dynamics import WorldModel
 from mjrl.utils.make_train_plots import make_train_plots
+import mjrl.utils.process_samples as process_samples
 from mjrl.utils.logger import DataLog
 from mjrl.utils.gym_env import GymEnv
 from mjrl.baselines.quadratic_baseline import QuadraticBaseline
@@ -32,6 +33,7 @@ environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
 environ['MKL_THREADING_LAYER'] = 'GNU'
 from mjrl.algos.mpc.ensemble_nn_dynamics import batch_call
 from mjrl.algos.mpc.pretrain import train_dynamics_models
+from mjrl.algos.mpc.nn_value_fn import ValueFunctionNet
 
 # ===============================================================================
 # Get command line arguments
@@ -98,11 +100,14 @@ if 'act_repeat' not in job_data.keys():
 if 'model_file' not in job_data.keys():
     job_data['model_file'] = None
 
+gamma = job_data['mpc_params']['gamma']
+
 assert job_data['start_state'] in ['init', 'buffer']
 # assert 'data_file' in job_data.keys()
 job_data['data_file'] = os.path.join('datasets', ENV_NAME+'.pickle')
 job_data['model_file'] = os.path.join(OUT_DIR, 'ensemble_model.pickle')
 job_data['init_policy'] = os.path.join(OUT_DIR, 'bc_policy.pickle')
+job_data['init_val_fn'] = os.path.join(OUT_DIR, 'val_fn.pickle')
 
 
 # ===============================================================================
@@ -155,12 +160,11 @@ mpc_params = job_data['mpc_params']
 # ===============================================================================
 
 paths = pickle.load(open(job_data['data_file'], 'rb'))
-
 rollout_score = np.mean([np.sum(p['rewards']) for p in paths])
 num_samples = np.sum([p['rewards'].shape[0] for p in paths])
 logger.log_kv('rollout_score', rollout_score)
 logger.log_kv('num_samples', num_samples)
-if hasattr(env.env.env, 'evaluate_success'):
+if hasattr(env.env.env, 'evaluate_success') and 'env_infos' in paths[0].keys(): #TODO: Mohak: D4RL dataset has env_infos in different format
     rollout_metric = env.env.env.evaluate_success(paths)
     logger.log_kv('rollout_metric', rollout_metric)
 
@@ -205,6 +209,41 @@ eval_paths = evaluate_policy(env, policy, None, noise_level=0.0, real_step=True,
 eval_score_bc = np.mean([np.sum(p['rewards']) for p in eval_paths])
 print('BC', eval_score_bc)
 logger.log_kv('eval_score_bc', eval_score_bc)
+
+# ===============================================================================
+# Value Function Initialization
+# ===============================================================================
+try:
+    value_fn = pickle.load(open(job_data['init_val_fn'], 'rb'))
+    # value_fn.set_params(value_fn.get_params())
+    val_fn_train_info = pickle.load(open(os.path.join(OUT_DIR,'val_fn_train_info.pickle'), 'rb'))
+    logger.log_kv('time_VF', val_fn_train_info['time_vf'])
+    logger.log_kv('VF_error_before', val_fn_train_info['VF_error_before'])
+    logger.log_kv('VF_error_after', val_fn_train_info['VF_error_after'])
+    value_fn_trained = True
+except FileNotFoundError:
+    value_fn = ValueFunctionNet(state_dim=env.observation_dim, hidden_size=job_data['val_fn_size'],
+                           epochs=job_data['val_fn_epochs'], reg_coef=job_data['val_fn_wd'], 
+                           batch_size=job_data['val_fn_batch_size'], learn_rate=job_data['val_fn_lr'],
+                           device=job_data['device'])
+    value_fn_trained = False
+
+process_samples.compute_returns(paths, gamma)
+
+if not value_fn_trained:
+    print('Training value function')
+    # compute returns
+    ts = timer.time()
+    error_before, error_after, epoch_losses = value_fn.fit(paths, return_errors=True)
+    time_vf = timer.time() - ts
+    logger.log_kv('time_VF', time_vf)
+    logger.log_kv('VF_error_before', error_before)
+    logger.log_kv('VF_error_after', error_after)
+    print('Saving value function')
+    pickle.dump(value_fn, open(OUT_DIR + '/val_fn.pickle', 'wb'))
+    vf_stats = dict(VF_error_before=error_before, VF_error_after=error_after, time_vf=time_vf)
+    pickle.dump(vf_stats, open(OUT_DIR + '/val_fn_train_info.pickle', 'wb'))
+    logger.log_kv('eval_score_bc', eval_score_bc)
 
 # ===============================================================================
 # Model Training
@@ -267,8 +306,8 @@ else:
 json.dump(job_data, open(EXP_FILE, 'w'), indent=4)
 
 
-agent = MPCAgent(env=env, learned_model=ensemble_model, sampling_policy=policy, mpc_params=mpc_params,
-                 seed=SEED, save_logs=True, reward_function=reward_function,
+agent = MPCAgent(env=env, learned_model=ensemble_model, sampling_policy=policy, value_fn=value_fn,
+                 mpc_params=mpc_params, seed=SEED, save_logs=True, reward_function=reward_function,
                  #  reward_function2 = reward_function2,
                  termination_function=termination_function, termination_function2=termination_function2,
                  truncate_lim=job_data['truncate_lim'], truncate_reward=job_data['truncate_reward'],

@@ -19,6 +19,7 @@ class MPCAgent():
     env,
     learned_model=None,
     sampling_policy=None,
+    value_fn=None,
     mpc_params=None,
     reward_function=None,
     # reward_function2=None,
@@ -42,7 +43,7 @@ class MPCAgent():
 
         self.num_models = len(self.learned_model)
         self.sampling_policy = sampling_policy
-        # self.refine, self.kappa, self.plan_horizon, self.plan_paths = refine, kappa, plan_horizon, plan_paths
+        self.value_fn = value_fn
         if mpc_params is None:
             print("Algorithm requires mpc params")
             quit()
@@ -97,6 +98,7 @@ class MPCAgent():
         #to initial values
         self.reset_distribution()
         self.gamma_seq = torch.cumprod(torch.tensor([1.0] + [self.gamma] * (self.horizon - 1)),dim=0).reshape(1, self.horizon)
+        self.gamma_lam_seq = torch.cumprod(torch.tensor([1.0] + [self.td_lam * self.gamma] * (self.horizon - 1)),dim=0).reshape(1, self.horizon)
 
         # self.mvn = MultivariateNormal(
         #     loc=torch.zeros(self.horizon * self.action_dim),
@@ -104,10 +106,13 @@ class MPCAgent():
         self.sample_shape = torch.Size([self.num_particles])
         self.num_steps = 0
         self.obs_buff = torch.zeros(self.num_models, self.num_particles, self.horizon, self.observation_dim)
+        self.next_obs_buff = torch.zeros(self.num_models, self.num_particles, self.horizon, self.observation_dim)
         self.act_buff = torch.zeros(self.num_models, self.num_particles, self.horizon, self.action_dim)
         self.obs_buff2 = torch.zeros(self.num_models, 1, self.horizon, self.observation_dim)
+        self.next_obs_buff2 = torch.zeros(self.num_models, 1, self.horizon, self.observation_dim)
         self.act_buff2 = torch.zeros(self.num_models, 1, self.horizon, self.action_dim)
         self.obs_buff3 = torch.zeros(self.num_models, self.num_models, self.horizon, self.observation_dim)
+        self.next_obs_buff3 = torch.zeros(self.num_models, self.num_models, self.horizon, self.observation_dim)
         self.act_buff3 = torch.zeros(self.num_models, self.num_models, self.horizon, self.action_dim)
         self.worst_model_idx = -1 #only used when pessimism_mode is 'min_return'
         self.to(device)
@@ -120,37 +125,36 @@ class MPCAgent():
         # for model in self.learned_model:
         #     model.to(device)
         self.learned_model.to(device)
-        # try:
-        #     self.baseline.model.to(device)
-        # except:
-        #     pass
         try:
             self.sampling_policy.to(device)
+        except:
+            pass
+        try:
+            self.value_fn.model.to(device)
         except:
             pass
         self.init_mean, self.init_std = self.init_mean.to(device), self.init_std.to(device)
         # self.init_std = self.init_std.to(device)
         self.mean_action, self.std_action = self.mean_action.to(device), self.std_action.to(device)
-        self.gamma_seq = self.gamma_seq.to(device)
+        self.gamma_seq, self.gamma_lam_seq = self.gamma_seq.to(device), self.gamma_lam_seq.to(device)
         self.sample_shape = torch.Size([self.num_particles], device=device)
         self.action_lows, self.action_highs, self.action_range = self.action_lows.to(device), self.action_highs.to(device), self.action_range.to(device)
         # self.mvn = MultivariateNormal(
         #     loc=torch.zeros(self.horizon * self.action_dim, device=device),
         #     covariance_matrix=self.init_cov * torch.eye(self.horizon * self.action_dim, device=device))
         self.sampling_policy.to(device)
-        self.obs_buff, self.act_buff = self.obs_buff.to(device), self.act_buff.to(device)
-        self.obs_buff2, self.act_buff2 = self.obs_buff2.to(device), self.act_buff2.to(device)
-        self.obs_buff3, self.act_buff3 = self.obs_buff3.to(device), self.act_buff3.to(device)
+        self.obs_buff, self.next_obs_buff, self.act_buff = self.obs_buff.to(device), self.next_obs_buff.to(device), self.act_buff.to(device)
+        self.obs_buff2, self.next_obs_buff2, self.act_buff2 = self.obs_buff2.to(device), self.next_obs_buff2.to(device), self.act_buff2.to(device)
+        self.obs_buff3, self.next_obs_buff3, self.act_buff3 = self.obs_buff3.to(device), self.next_obs_buff3.to(device), self.act_buff3.to(device)
         if self.truncate_lim is not None:
             self.truncate_lim = self.truncate_lim.to(device)
         self.device = device
 
     def is_cuda(self):
         # Check if any of the networks are on GPU
-        # model_cuda = [model.is_cuda() for model in self.learned_model]
-        # model_cuda = any(model_cuda)
-        # return any([model_cuda])
-        return self.learned_model.is_cuda()
+        model_cuda = self.learned_model.is_cuda()
+        value_fn_cuda = next(self.value_fn.parameters()).is_cuda
+        return any([model_cuda, value_fn_cuda])
 
     def train_step(self):
         #train the heuristic (and sampling policy?) here
@@ -214,27 +218,27 @@ class MPCAgent():
         if mode == 'best_mean':
             paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
                 1), sample_cl_actions=self.optimize_open_loop,
-                obs_buff=self.obs_buff2, act_buff=self.act_buff2)
+                obs_buff=self.obs_buff2, next_obs_buff=self.next_obs_buff2, act_buff=self.act_buff2)
             best_idx = torch.argmax(paths['discounted_return'])
             act_seq = paths["actions"][best_idx].squeeze(0) #self.mean_action[best_idx].clone()
         elif mode == 'worst_mean':
             paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
                 1), sample_cl_actions=self.optimize_open_loop,
-            obs_buff=self.obs_buff2, act_buff=self.act_buff2)
+                obs_buff=self.obs_buff2, next_obs_buff=self.next_obs_buff2, act_buff=self.act_buff2)
             worst_idx = torch.argmin(paths['discounted_return'])
             # print(paths['discounted_return'], worst_idx)
             act_seq = paths["actions"][worst_idx].squeeze(0) #self.mean_action[worst_idx].clone()
         elif mode == 'softmax_mean':
             paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
                 1), sample_cl_actions=self.optimize_open_loop,
-                obs_buff=self.obs_buff2, act_buff=self.act_buff2)
+                obs_buff=self.obs_buff2, next_obs_buff=self.next_obs_buff2, act_buff=self.act_buff2)
             weights = torch.softmax((1.0 / self.beta) *  paths['discounted_return'], dim=0)
             weighted_mean = (weights.T * self.mean_action.T).T
             act_seq = torch.sum(weighted_mean, dim=0).clone()
         elif mode == "softmin_mean":
             paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
                 1), sample_cl_actions=self.optimize_open_loop,
-            obs_buff=self.obs_buff2, act_buff=self.act_buff2)
+                obs_buff=self.obs_buff2, next_obs_buff=self.next_obs_buff2, act_buff=self.act_buff2)
             weights = torch.softmax((-1.0 / self.beta) *  paths['discounted_return'], dim=0)
             weighted_mean = (weights.T * self.mean_action.T).T
             act_seq = torch.sum(weighted_mean, dim=0).clone()
@@ -246,7 +250,7 @@ class MPCAgent():
         elif type(mode) is int:
             paths = self.rollout_actions(observation, self.mean_action.unsqueeze(
                 1), sample_cl_actions=self.optimize_open_loop,
-                obs_buff=self.obs_buff2, act_buff=self.act_buff2)
+                obs_buff=self.obs_buff2, next_obs_buff=self.next_obs_buff2, act_buff=self.act_buff2)
             act_seq = paths["actions"][mode].squeeze(0)
 
         elif mode == 'best_mean_sample':
@@ -268,12 +272,13 @@ class MPCAgent():
     def generate_rollouts(self, observation):
         open_loop_actions = self.sample_actions_batch(filter_actions=False)
         paths = self.rollout_actions(observation, open_loop_actions, sample_cl_actions=True,
-        obs_buff=self.obs_buff, act_buff=self.act_buff, sample_zero_action=True)  # , action_batch)
+        obs_buff=self.obs_buff, next_obs_buff=self.next_obs_buff, act_buff=self.act_buff, sample_zero_action=True)  # , action_batch)
         return paths
 
     def rollout_actions(self, start_obs, open_loop_actions,
                         sample_cl_actions=True,
                         obs_buff=None,
+                        next_obs_buff=None,
                         act_buff=None,
                         filter_actions=True,
                         sample_zero_action=False,
@@ -282,11 +287,13 @@ class MPCAgent():
         # open_loop_actions # model x particles x horizon x dim
         ts = timer.time()
         num_models, num_particles, horizon, _ = open_loop_actions.shape
-        gamma_seq = self.gamma_seq
+        gamma_seq = self.gamma_seq if self.value_fn is None else self.gamma_lam_seq
 
         #sample open-loop actions using current means
         if obs_buff is None:
             obs_buff = torch.zeros(num_models, num_particles, horizon, self.observation_dim, device=self.device)
+        if next_obs_buff is None:
+            next_obs_buff = torch.zeros(num_models, num_particles, horizon, self.observation_dim, device=self.device)
         if act_buff is None:
             act_buff = torch.zeros(num_models, num_particles, horizon, self.action_dim, device=self.device)
 
@@ -325,6 +332,7 @@ class MPCAgent():
             if model_idx > -1:
                 stp1 = stp1[model_idx]
             obs_buff[:,:, t,:] = st  # model x particles x horizon x dim
+            next_obs_buff[:,:,t,:] = stp1 #model x particles x horizon x dim
             act_buff[:,:, t,:] = at  # model x particles x horizon x dim
             st = stp1
 
@@ -332,6 +340,7 @@ class MPCAgent():
         #                       actions=act.view(-1,horizon,self.action_dim),
         #                       open_loop_actions=open_loop_actions.view(-1,horizon,self.action_dim))
         paths = dict(observations=obs_buff,
+                     next_observations=next_obs_buff,
                      actions=act_buff,
                      open_loop_actions=open_loop_actions)
 
@@ -400,8 +409,18 @@ class MPCAgent():
             #compute discounted returns
             paths['pred_err'] = pred_err
 
-        disc_return = torch.cumsum(
-                    torch.flip(gamma_seq * (paths["rewards"] * (1.0 - paths["dones"])), [-1]), axis=-1)[:, :, -1]
+        if self.value_fn is not None:
+            value_preds = self.value_fn.forward(paths["next_observations"].view(-1,self.observation_dim)) #model*particles*horizon x observation
+            paths['value_preds'] = value_preds.view(paths['rewards'].shape) # model x particles x horizon
+            #change rewards to incorporate heuristic (only terminal reward is changed)
+            paths['shaped_rewards'] = paths['rewards'] + (1.0 - self.td_lam) * self.gamma * paths['value_preds']
+            # paths['shaped_rewards'][:,:,-1] = paths['value_preds'][:,:,-1]
+            disc_return =  torch.cumsum(
+                        torch.flip(gamma_seq * (paths["shaped_rewards"] * (1.0 - paths["dones"])), [-1]), axis=-1)[:, :, -1]
+
+        else:
+            disc_return = torch.cumsum(
+                        torch.flip(gamma_seq * (paths["rewards"] * (1.0 - paths["dones"])), [-1]), axis=-1)[:, :, -1]
 
         # if self.pessimism_mode == 'min_return' and model_idx == -1:
         #     #average disc return of each gaussian
@@ -446,13 +465,13 @@ class MPCAgent():
             base_disc_return = paths["discounted_return"][:,0]  # the mean policy
             #rollout new_mean to get its discounted return
             paths_new = self.rollout_actions(observation, new_mean.unsqueeze(0).repeat(self.num_models,1,1,1),
-                            sample_cl_actions=self.optimize_open_loop, obs_buff=self.obs_buff3, act_buff=self.act_buff3)
+                            sample_cl_actions=self.optimize_open_loop, obs_buff=self.obs_buff3, next_obs_buff=self.next_obs_buff3, act_buff=self.act_buff3)
             new_mean_disc_return = paths_new["discounted_return"]  # models x policy
             #value difference
             val_difference, _ = (new_mean_disc_return - base_disc_return.view(1,-1)).min(axis=0)
             #select mean with max value difference
             max_perf_gap, self.worst_model_idx = torch.max(val_difference, dim=0)
-
+            # print(max_perf_gap.item())
             # check whether to accept the candidate
             if max_perf_gap.item() >= self.epsilon:
                 # print(max_perf_gap.item())
@@ -515,6 +534,13 @@ class MPCAgent():
             noise = torch.exp(self.sampling_policy.log_std) * eps
             action = mean + noise * include_noise
         return action, {'mean': mean, 'log_std': self.sampling_policy.log_std_val, 'evaluation': mean}
+    
+    # def get_value_fn_predictions(self, paths):
+    #     featmat = self._features(paths).astype('float32')
+    #     featmat_var = tensorize(featmat, device=self.device)
+    #     prediction = self.value_fn.model(featmat_var)
+    #     paths["value_fn_preds"] = predictions
+    #     return paths
 
     def filter_actions(self, action_batch):
         beta_0, beta_1, beta_2 = self.filter_coeffs
@@ -546,6 +572,14 @@ class MPCAgent():
     def reset(self):
         self.reset_distribution()
         self.num_steps = 0
+        self.worst_model_idx = -1 #only used when pessimism_mode is 'min_return'
+        self.obs_buff = torch.zeros_like(self.obs_buff)
+        self.act_buff = torch.zeros_like(self.act_buff)
+        self.obs_buff2 = torch.zeros_like(self.obs_buff2)
+        self.act_buff2 = torch.zeros_like(self.act_buff2)
+        self.obs_buff3 = torch.zeros_like(self.obs_buff3)
+        self.act_buff3 = torch.zeros_like(self.act_buff3)
+
         self._avg_scores = []
 
     def check_convergence(self):
