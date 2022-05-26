@@ -85,11 +85,10 @@ class PMPPIAgent(AbstractMPCAgent):
     def preprocess_and_reset(self, observation, infos=None, sample_zero_action=True):
         # Sample open-loop actions for subsequent rollouts
         eps = torch.randn(self.num_models, self.num_particles, self.horizon, self.action_dim, device=self.device)
-        eps[:,0] = torch.zeros_like(eps[:,0]) #set first particle to be zeros
+        eps[:,0] = 0. # set first perturbation to be zeros
         self._open_loop_actions = self.mean_action.unsqueeze(1).repeat(1,self.num_particles, 1, 1) + self.init_std * eps
-
         if self.optimize_open_loop and sample_zero_action:
-            self._open_loop_actions[:,0] = 0.  # always sample a zero action sequence
+            self._open_loop_actions[:,-1] = 0.  # always sample a zero action sequence
 
         # Alaways sample closed-loop actions in rollouts in optimization
         self._sample_cl_actions = True
@@ -110,8 +109,6 @@ class PMPPIAgent(AbstractMPCAgent):
     def shift(self, shift_steps):
         self.mean_action = self.mean_action.roll(-shift_steps, 1)
         if self.base_action == 'random':
-            # self.mean_action[-1] = self.generate_noise(shape=torch.Size((1, 1)),
-            #                                            base_seed=self.seed_val + 123*self.num_steps)
             self.mean_action[:,-shift_steps:] = self.action_range * torch.rand(self.num_models, shift_steps, self.action_dim, device=self.device) + self.action_lows
         elif self.base_action == 'null':
             self.mean_action[:,-shift_steps:].zero_()
@@ -136,8 +133,7 @@ class PMPPIAgent(AbstractMPCAgent):
             pred_err = self.dynamics_model.compute_delta(
                             paths['observations'].view(-1, self.observation_dim), # model*particles*horizon x dim
                             paths['actions'].view(-1, self.action_dim)) # model*particles*horizon
-            pred_err = pred_err.view(num_models, num_particles, horizon) # model x particles x horizon
-            paths['pred_err'] = pred_err
+            paths['pred_err'] = pred_err.view(num_models, num_particles, horizon) # model x particles x horizon
             # if self.pessimism_mode == "discount":
             #     termination_prob = 2.0 * (torch.sigmoid(pred_err / self.truncate_lim.view(-1,1,1)) - 0.5)
             #     new_discount = self.gamma * (1.0 - termination_prob)
