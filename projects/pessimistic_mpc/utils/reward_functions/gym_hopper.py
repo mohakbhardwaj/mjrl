@@ -23,9 +23,9 @@ def reward_function(paths):
     ang = obs[:, :, :, 1]
     alive_bonus = 1.0 * (height > 0.7) * (torch.abs(ang) < 0.2)
     rewards = vel_x + alive_bonus - 1e-3*power
-    paths["rewards"] = rewards #if rewards.shape[0] > 1 else rewards.ravel()
+    return rewards #if rewards.shape[0] > 1 else rewards.ravel()
 
-    return paths
+
 
 def termination_function(paths):
     # path has 2 keys: observations, actions
@@ -39,14 +39,13 @@ def termination_function(paths):
     dones[obs_term] = 1
     dones[height <= 0.7] = 1
     dones[torch.abs(angle) >= 0.2] = 1
-    
-    #set all states after the first terminal state to 
+
+    #set all states after the first terminal state to
     #terminal
     dones = torch.cumsum(dones, dim=-1)
     dones[dones > 0] = 1.0
+    return dones
 
-    paths['dones'] = dones
-    paths['terminated'] = torch.any(dones, dim=-1)
 
 
 
@@ -65,7 +64,6 @@ def termination_function(paths):
     #     path["actions"] = path["actions"][:T]
     #     path["rewards"] = path["rewards"][:T]
     #     path["terminated"] = done
-    return paths
 
 def reward_function2(paths):
     # path has two keys: observations and actions

@@ -4,7 +4,8 @@ Job script to learn policy using MOReL
 
 from mjrl.algos.mbrl.sampling import sample_paths, evaluate_policy
 from mjrl.algos.mbrl.model_based_npg import ModelBasedNPG
-from mjrl.algos.mpc.mpc_agent import MPCAgent
+# from mjrl.algos.mpc.mpc_agent import MPCAgent
+from mjrl.algos.mpc.pmppi_agent import PMPPIAgent as MPCAgent
 from mjrl.algos.mbrl.nn_dynamics import WorldModel
 from mjrl.utils.make_train_plots import make_train_plots
 import mjrl.utils.process_samples as process_samples
@@ -223,7 +224,7 @@ try:
     value_fn_trained = True
 except FileNotFoundError:
     value_fn = ValueFunctionNet(state_dim=env.observation_dim, hidden_size=job_data['val_fn_size'],
-                           epochs=job_data['val_fn_epochs'], reg_coef=job_data['val_fn_wd'], 
+                           epochs=job_data['val_fn_epochs'], reg_coef=job_data['val_fn_wd'],
                            batch_size=job_data['val_fn_batch_size'], learn_rate=job_data['val_fn_lr'],
                            device=job_data['device'])
     value_fn_trained = False
@@ -327,7 +328,7 @@ for outer_iter in range(job_data['num_iter']):
         eval_score = np.mean([np.sum(p['rewards']) for p in eval_paths])
         print(eval_score)
         # print('scores', np.array(agent._avg_scores))
-        print('avg_scores', np.mean(agent._avg_scores))
+        print('avg_scores', np.mean(agent._scores))
 
         logger.log_kv('eval_score', eval_score)
         try:

@@ -1,8 +1,8 @@
-import torch 
+import torch
 
 def scale_ctrl(ctrl, action_lows, action_highs, squash_fn='clamp'):
     if len(ctrl.shape) == 1:
-        ctrl = ctrl[np.newaxis, :, np.newaxis]
+        ctrl = ctrl[None, :, None]
     act_half_range = (action_highs - action_lows) / 2.0
     act_mid_range = (action_highs + action_lows) / 2.0
     if squash_fn == 'clamp':

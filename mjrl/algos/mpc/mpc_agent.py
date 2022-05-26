@@ -31,7 +31,7 @@ class MPCAgent():
     device='cpu',
     save_logs=True):
 
-        self._avg_scores = []
+        self._scores = []
         self.env = env
         if learned_model is None:
                 print("Algorithm requires a (list of) learned dynamics model")
@@ -202,7 +202,7 @@ class MPCAgent():
         #     print('\n')
         #     # import pdb; pdb.set_trace()
 
-        self._avg_scores.append(score[0].cpu().numpy())
+        self._scores.append(score[0].cpu().numpy())
         self.num_steps += 1
 
         return curr_action_seq
@@ -351,7 +351,7 @@ class MPCAgent():
         if self.learned_model.learn_reward:
             self.learned_model.compute_path_rewards(paths)
         else:
-            paths = self.reward_function(paths)
+            paths["rewards"] = self.reward_function(paths)
             paths["rewards"] = paths["rewards"] * self.env.act_repeat
 
         # paths = dict()
@@ -362,7 +362,7 @@ class MPCAgent():
 
 
         if callable(self.termination_function):
-            paths = self.termination_function(paths)
+            paths["dones"] = self.termination_function(paths)
         else:
             paths["terminated"] = torch.zeros(paths["observations"].shape[0])
 
@@ -534,7 +534,7 @@ class MPCAgent():
             noise = torch.exp(self.sampling_policy.log_std) * eps
             action = mean + noise * include_noise
         return action, {'mean': mean, 'log_std': self.sampling_policy.log_std_val, 'evaluation': mean}
-    
+
     # def get_value_fn_predictions(self, paths):
     #     featmat = self._features(paths).astype('float32')
     #     featmat_var = tensorize(featmat, device=self.device)
@@ -580,7 +580,7 @@ class MPCAgent():
         self.obs_buff3 = torch.zeros_like(self.obs_buff3)
         self.act_buff3 = torch.zeros_like(self.act_buff3)
 
-        self._avg_scores = []
+        self._scores = []
 
     def check_convergence(self):
         return False
