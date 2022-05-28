@@ -207,7 +207,7 @@ class PMPPIAgent(AbstractMPCAgent):
             #discounted return of current policy
             base_disc_return = paths["discounted_return"][:,0]  # the mean policy
             #rollout new_mean to get its discounted return
-            paths_new = self.evaluate_action_sequence(observaion, new_mean.unsqueeze(0).repeat(self.num_models,1,1,1))
+            paths_new = self.evaluate_action_sequence(observation, new_mean.unsqueeze(0).repeat(self.num_models,1,1,1))
             new_mean_disc_return = paths_new["discounted_return"]  # models x policy
             #value difference
             val_difference, _ = (new_mean_disc_return - base_disc_return.view(1,-1)).min(axis=0)
