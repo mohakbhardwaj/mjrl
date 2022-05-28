@@ -36,15 +36,16 @@ def prep_d4rl_dataset(*,
     e.set_seed(SEED)
 
     if include:
-        import sys
+        import sys, importlib
         splits = include.split("/")
         dirpath = "" if splits[0] == "" else os.path.dirname(os.path.abspath(__file__))
         for x in splits[:-1]: dirpath = dirpath + "/" + x
         filename = splits[-1].split(".")[0]
         sys.path.append(dirpath)
-        exec("from "+filename+" import *")
-    if 'obs_mask' in globals(): e.obs_mask = obs_mask
+        # exec("from "+filename+" import *")
+        mod = importlib.import_module(filename)
 
+    if 'obs_mask' in vars(mod): e.obs_mask = mod.obs_mask
     dataset = e.env.env.get_dataset()
     raw_paths = d4rl2paths(dataset)
 
