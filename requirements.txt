@@ -1,5 +1,5 @@
 mkl-service
-pytorch==1.11
+torch==1.11
 tabulate
 termcolor
 torchvision
@@ -8,10 +8,10 @@ click
 cloudpickle
 gym==0.13
 matplotlib
-mujoco-py<2.1,>=2.0
+mujoco-py<2.2,>=2.1
 pyyaml
 tqdm
 wheel
 scipy
 transforms3d
-d4rl
+git+https://github.com/rail-berkeley/d4rl@master#egg=d4rl
