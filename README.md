@@ -1,3 +1,12 @@
+# Quick installation
+```
+git clone -b v2 https://github.com/mohakbhardwaj/mjrl.git
+cd mjrl
+. install_mujoco.sh  # install mujoco, if missing
+. install.sh
+```
+
+
 # RL for MuJoCo
 
 This package  contains implementations of various RL algorithms for continuous control tasks simulated with [MuJoCo.](http://www.mujoco.org/)
