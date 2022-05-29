@@ -11,6 +11,7 @@ def import_from_path(path, base_path=None) :
     spec.loader.exec_module(mod)
     return mod
 
+import copy
 def parse_and_update_dict(base_dict, new_dict, token=':'):
     base_dict = copy.deepcopy(base_dict)
     for k,v in new_dict.items():
