@@ -13,11 +13,9 @@ import d4rl
 import mjrl.samplers.core as sampler
 from mjrl.utils.gym_env import GymEnv
 from mjrl.utils.tensor_utils import d4rl2paths
+from mjrl.utils.utils import import_from_path
 
-# ===============================================================================
-# Get command line arguments
-# ===============================================================================
-
+FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 
 def prep_d4rl_dataset(*,
                       env_name,
@@ -36,16 +34,9 @@ def prep_d4rl_dataset(*,
     e.set_seed(SEED)
 
     if include:
-        import sys, importlib
-        splits = include.split("/")
-        dirpath = "" if splits[0] == "" else os.path.dirname(os.path.abspath(__file__))
-        for x in splits[:-1]: dirpath = dirpath + "/" + x
-        filename = splits[-1].split(".")[0]
-        sys.path.append(dirpath)
-        # exec("from "+filename+" import *")
-        mod = importlib.import_module(filename)
 
-    if 'obs_mask' in vars(mod): e.obs_mask = mod.obs_mask
+        mod = import_from_path(include, base_path=FILE_PATH)
+        if 'obs_mask' in vars(mod): e.obs_mask = mod.obs_mask
     dataset = e.env.env.get_dataset()
     raw_paths = d4rl2paths(dataset)
 
@@ -76,12 +67,16 @@ def prep_d4rl_dataset(*,
     output_dir = output
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
-
-
     pickle.dump(paths, open(os.path.join(output_dir,env_name+'.pickle'), 'wb'))
+    return paths
 
 
 if __name__=='__main__':
+
+    # ===============================================================================
+    # Get command line arguments
+    # ===============================================================================
+
     parser = argparse.ArgumentParser(description='Convert dataset from d4rl format to paths.')
     parser.add_argument('--env_name', type=str, required=True, help='environment ID')
     parser.add_argument('--output', type=str,  help='location to store data')
