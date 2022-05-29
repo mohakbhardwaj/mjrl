@@ -9,7 +9,22 @@ def import_from_path(path, base_path=None) :
     mod = importlib.util.module_from_spec(spec)
     sys.modules[modulename] = mod
     spec.loader.exec_module(mod)
-
-    # sys.path.append(pathname)
-
     return mod
+
+def parse_and_update_dict(base_dict, new_dict, token=':'):
+    base_dict = copy.deepcopy(base_dict)
+    for k,v in new_dict.items():
+        keys = k.split(token)
+        d = base_dict
+        for i in range(len(keys)):
+            ki = keys[i]
+            if i==len(keys)-1:
+                if ki in d:
+                    assert not isinstance(d[ki], dict), "Inconsistent key in new_dict."
+                d[ki] = v
+            else:
+                if ki not in d:
+                    d[ki] = {}
+                assert isinstance(d[ki], dict), "Inconsistent key in new_dict."
+                d = d[ki]
+    return base_dict

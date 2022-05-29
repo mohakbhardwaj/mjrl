@@ -380,7 +380,7 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser(description='Model accelerated policy optimization.')
     parser.add_argument('--config', '-c', type=str, required=True, help='path to config file with exp params')
     parser.add_argument('--output', '-o', type=str,  default='exp_results', help='location to store results')
-    parser.add_argument('--include', '-i', type=str, required=False, help='package to import')
+    # parser.add_argument('--include', '-i', type=str, required=False, help='package to import')
     parser.add_argument('--seed', '-s', type=int, default=None, help='seed')
     kwargs = {k:v for k,v in vars(parser.parse_args()).items() if v is not None}
 
