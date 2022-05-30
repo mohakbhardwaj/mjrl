@@ -162,7 +162,7 @@ class AbstractMPCAgent(ABC):
             at = ar_filter.filter(at) if self.filter_actions else at
             ob_next = self.dynamics_function(ob, at)
             if model_idx >-1:
-                ob_next = ob_next[model_idx]  # rollout using a specific model
+                ob_next[:] = ob_next[model_idx] # rollout using a specific model
             obs_buff[:,:, t,:] = ob  # model x particles x horizon x dim
             act_buff[:,:, t,:] = at  # model x particles x horizon x dim
             ob = ob_next
