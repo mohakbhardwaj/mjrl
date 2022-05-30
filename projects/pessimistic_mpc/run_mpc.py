@@ -186,6 +186,10 @@ try:
     if min_log_std:
         policy.min_log_std[:] = tensor_utils.tensorize(min_log_std)
         policy.set_param_values(policy.get_param_values())
+    bc_train_info = pickle.load(open(os.path.join(OUT_DIR,'bc_train_info.pickle'), 'rb'))
+    logger.log_kv('BC_error_before', bc_train_info['BC_error_before'])
+    logger.log_kv('BC_error_after', bc_train_info['BC_error_after'])
+
     policy_trained = True
     print('Policy Loaded')
 except FileNotFoundError:
@@ -200,17 +204,29 @@ if not policy_trained:
     policy.to(job_data['device'])
     bc_agent = BC(paths, policy, epochs=job_data['bc_epochs'], batch_size=job_data['bc_batch_size'],
                   lr=job_data['bc_lr'], loss_type='MSE') #epochs=5
-    bc_agent.train()
+    error_before, error_after  = bc_agent.train()
+    logger.log_kv('BC_error_before', error_before)
+    logger.log_kv('BC_error_after', error_after)
     print('Saving behavior cloned policy')
     pickle.dump(policy, open(OUT_DIR + '/bc_policy.pickle', 'wb'))
+    bc_stats = dict(BC_error_before=error_before, BC_error_after=error_after)
+    pickle.dump(bc_stats, open(OUT_DIR + '/bc_train_info.pickle', 'wb'))
 
 print("Performing validation rollouts for BC policy ... ")
 eval_paths = evaluate_policy(env, policy, None, noise_level=0.0, real_step=True,
                                 num_episodes=job_data['eval_rollouts'], visualize=False)
 eval_score_bc = np.mean([np.sum(p['rewards']) for p in eval_paths])
-print('BC', eval_score_bc)
+try:
+    success_metric_bc = env.env.unwrapped.evaluate_success(eval_paths)
+except:
+    success_metric_bc = 0.0
+print('BC: Eval score {}, Success {}'.format(eval_score_bc, success_metric_bc))
 logger.log_kv('eval_score_bc', eval_score_bc)
+logger.log_kv('success_metric_bc', success_metric_bc)
+print_data = sorted(filter(lambda v: np.asarray(v[1]).size == 1, logger.get_current_log().items()))
+print(tabulate(print_data))
 
+exit()
 # ===============================================================================
 # Value Function Initialization
 # ===============================================================================
@@ -244,7 +260,7 @@ if not value_fn_trained:
     pickle.dump(value_fn, open(OUT_DIR + '/val_fn.pickle', 'wb'))
     vf_stats = dict(VF_error_before=error_before, VF_error_after=error_after, time_vf=time_vf)
     pickle.dump(vf_stats, open(OUT_DIR + '/val_fn_train_info.pickle', 'wb'))
-    logger.log_kv('eval_score_bc', eval_score_bc)
+    # logger.log_kv('eval_score_bc', eval_score_bc)
 
 # ===============================================================================
 # Model Training
@@ -255,7 +271,7 @@ try:
     models_trained = True
     print('Dynamics model Loaded')
 except FileNotFoundError:
-    models = [WorldModel(state_dim=env.observation_dim, act_dim=env.action_dim, seed=SEED+i,
+    models = [WorldModel(state_dim=env.observation_dim-job_data['context_dim'], act_dim=env.action_dim, seed=SEED+i,
                         **job_data) for i in range(job_data['num_models'])]
     models_trained = False
 

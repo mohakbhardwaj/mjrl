@@ -114,8 +114,8 @@ class BC:
 
         # log stats before
         if self.save_logs:
-            loss_val = self.loss(data, idx=range(num_samples)).to('cpu').data.numpy().ravel()[0]
-            self.logger.log_kv('loss_before', loss_val)
+            loss_before = self.loss(data, idx=range(num_samples)).to('cpu').data.numpy().ravel()[0]
+            self.logger.log_kv('loss_before', loss_before)
 
         # train loop
         for ep in config_tqdm(range(self.epochs), suppress_fit_tqdm):
@@ -131,9 +131,10 @@ class BC:
         # log stats after
         if self.save_logs:
             self.logger.log_kv('epoch', self.epochs)
-            loss_val = self.loss(data, idx=range(num_samples)).to('cpu').data.numpy().ravel()[0]
-            self.logger.log_kv('loss_after', loss_val)
+            loss_after = self.loss(data, idx=range(num_samples)).to('cpu').data.numpy().ravel()[0]
+            self.logger.log_kv('loss_after', loss_after)
             self.logger.log_kv('time', (timer.time()-ts))
+        return loss_before, loss_after
 
     def train(self, **kwargs):
         observations = np.concatenate([path["observations"] for path in self.expert_paths])
@@ -141,7 +142,7 @@ class BC:
         observations = tensorize(observations, device=self.policy.device)
         expert_actions = tensorize(expert_actions, self.policy.device)
         data = dict(observations=observations, expert_actions=expert_actions)
-        self.fit(data, **kwargs)
+        return self.fit(data, **kwargs)
 
 
 def config_tqdm(range_inp, suppress_tqdm=False):

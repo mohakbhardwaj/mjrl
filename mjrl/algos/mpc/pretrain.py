@@ -4,6 +4,7 @@ import torch
 import copy
 
 from mjrl.algos.mpc.ensemble_nn_dynamics import EnsembleWorldModel, batch_call
+from mjrl.algos.mpc.context_world_model import WorldModelWithContext
 
 
 def _unpack_paths(paths):
@@ -19,10 +20,15 @@ def _train_models(models, paths, seed=0, checkpoint_freq=1, **job_data):
                 dyn_loss_gen=[ [] for _ in range(num_checkpoints)],
                 model_checkpoints=[ [] for _ in range(num_checkpoints)],
                 epoch=[ [] for _ in range(num_checkpoints)])
+    context_dim = job_data['context_dim']
 
     s, a, sp = _unpack_paths(paths)
     job_data_clone = copy.copy(job_data)
     job_data_clone['fit_epochs'] = 1
+    
+    if context_dim > 0:
+        s, sp = s[:, 0:-context_dim], sp[:, 0:-context_dim]
+    
     for i, model in enumerate(models):
         print("Training dynamics models {}".format(i))
         for j in range(job_data['fit_epochs']):
@@ -37,13 +43,17 @@ def _train_models(models, paths, seed=0, checkpoint_freq=1, **job_data):
 
     for i in range(len(info['model_checkpoints'])):
         models = info['model_checkpoints'][i]
-        ensemble_model = EnsembleWorldModel(ensemble_size=len(models), state_dim=s.shape[1], act_dim=a.shape[1], seed=seed, **job_data)
+        if context_dim > 0:
+            ensemble_model = WorldModelWithContext(ensemble_size=len(models), state_dim=s.shape[1], act_dim=a.shape[1], seed=seed, **job_data)
+        else:
+            ensemble_model = EnsembleWorldModel(ensemble_size=len(models), state_dim=s.shape[1], act_dim=a.shape[1], seed=seed, **job_data)
         ensemble_model.set_dynamics_from_list(models)
         info['model_checkpoints'][i] = ensemble_model
 
     return info
 
-def _validate_models(ensemble_model, paths):
+def _validate_models(ensemble_model, paths, **job_data):
+    context_dim = job_data['context_dim']
     with torch.no_grad():
         s, a, sp = _unpack_paths(paths)
         sp = torch.from_numpy(sp).float().to(device=ensemble_model.device)
@@ -63,7 +73,7 @@ def train_dynamics_models(models, paths, slackness=0.1, **job_data):
     # Compute errors and predicted errors.
     errors, predicted_errors = [], []
     for ensemble_model in info['model_checkpoints']:
-        _errors, _predicted_errors = _validate_models(ensemble_model, paths)
+        _errors, _predicted_errors = _validate_models(ensemble_model, paths, **job_data)
         errors.append(_errors)
         predicted_errors.append(_predicted_errors)
     e = torch.stack(errors)
