@@ -1,0 +1,17 @@
+mkl-service
+torch==1.11
+tabulate
+termcolor
+torchvision
+patchelf
+click
+cloudpickle
+gym==0.13
+matplotlib
+mujoco-py<2.2,>=2.1
+pyyaml
+tqdm
+wheel
+scipy
+transforms3d
+git+https://github.com/rail-berkeley/d4rl@master#egg=d4rl
