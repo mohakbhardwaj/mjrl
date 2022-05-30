@@ -64,7 +64,7 @@
 'num_particles': 100,
 #'init_cov': 0.001, # 0.001
 'init_std': 0.1,
-#'init_mean': 
+#'init_mean':
 'gamma': 0.999,
 'beta': 3.33, # 1.0 #3.33,
 'mixing_factor': 0.2, #0.4, #0.8, #0.6,
@@ -76,8 +76,8 @@
 'shift_steps': 1,
 'squash_fn': 'clamp',
 'optimize_open_loop': True, # False, True
-'pessimism_mode': 'bonus', # truncation, bonus, discount
-'epsilon': 0.005, 
+'pessimism_mode': 'atac', #'bonus', # truncation, bonus, discount
+'epsilon': 1.0,
 'filter_coeffs': [0.2, 0.8, 0.0],
 
 }
