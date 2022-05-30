@@ -57,7 +57,9 @@ class PMPPIAgent(AbstractMPCAgent):
         self.optimize_open_loop = self.mpc_params['optimize_open_loop']
         self.pessimism_mode = self.mpc_params['pessimism_mode']
         self.epsilon = self.mpc_params['epsilon']
-        self.worst_model_idx = -1 # NOTE Only used when pessimism_mode is 'min_return'
+
+        # atac
+        self.actions_to_take = None
 
         self._value_fn = value_fn
         super().__init__(# NOTE currently for backward compatability
@@ -102,7 +104,7 @@ class PMPPIAgent(AbstractMPCAgent):
             self.reset_distribution()
 
     def reset_distribution(self):
-        self.num_means = 1 if self.pessimism_mode == 'min_return' else self.num_models
+        self.num_means = 1 if self.pessimism_mode == 'atac' else self.num_models
         self.mean_action = torch.zeros((self.num_means, self.horizon, self.action_dim), device=self.device)
         self.std_action = torch.tensor(self.init_std, device=self.device)
 
@@ -128,7 +130,7 @@ class PMPPIAgent(AbstractMPCAgent):
     def postprocess(self, paths):
         # Compute prediction error, which is used in modifying the reward and termination.
         paths['open_loop_actions'] = self._open_loop_actions.clone()
-        if self.truncate_lim is not None and len(self.dynamics_model) > 1 and (self.pessimism_mode != 'min_return') :
+        if self.truncate_lim is not None and len(self.dynamics_model) > 1 and (self.pessimism_mode != 'atac') :
             num_models, num_particles, horizon = paths['observations'].shape[:-1]
             pred_err = self.dynamics_model.compute_delta(
                             paths['observations'].view(-1, self.observation_dim), # model*particles*horizon x dim
@@ -192,61 +194,62 @@ class PMPPIAgent(AbstractMPCAgent):
 
 
     def update_policy(self, observation, paths, infos=None):
-        if self.optimize_open_loop:
-            actions = paths['open_loop_actions']
-        else: actions = paths['actions'] #torch.cat([path['actions'].unsqueeze(0) for path in paths], dim=0)
+        actions = paths['open_loop_actions'] if self.optimize_open_loop else paths['actions']
         w = torch.softmax((1.0/self.beta) * paths["discounted_return"], dim=-1)
 
-        #Update mean
+        # Update mean
         weighted_seq = w[:,:,None,None] * actions
         new_mean = torch.sum(weighted_seq, dim=1)  # over particles
-        new_mean = (1.0 - self.step_size_mean) * self.mean_action + self.step_size_mean * new_mean  # generate candiates
-        # weighted_seq = w.T * actions.T
-        # new_mean = torch.sum(weighted_seq.T, dim=1)
-        if self.pessimism_mode == "min_return":
-            #discounted return of current policy
-            base_disc_return = paths["discounted_return"][:,0]  # the mean policy
-            #rollout new_mean to get its discounted return
-            paths_new = self.evaluate_action_sequence(observation, new_mean.unsqueeze(0).repeat(self.num_models,1,1,1))
-            new_mean_disc_return = paths_new["discounted_return"]  # models x policy
-            #value difference
-            val_difference, _ = (new_mean_disc_return - base_disc_return.view(1,-1)).min(axis=0)
-            #select mean with max value difference
-            max_perf_gap, self.worst_model_idx = torch.max(val_difference, dim=0)
-            # print(max_perf_gap.item())
+        new_mean = (1.0 - self.step_size_mean) * self.mean_action + self.step_size_mean * new_mean  # generate candidates
+
+        if self.pessimism_mode == "atac":
+            assert self.optimize_open_loop
+            assert self.optimization_freq==1
+
+            all_means = torch.cat([new_mean, self.mean_action])
+            # rollout to get its discounted return
+            paths_new = self.evaluate_action_sequence(observation, all_means.unsqueeze(0).repeat(self.num_models,1,1,1))  # for each mean, roll for all the models.
+            new_mean_disc_return = paths_new["discounted_return"][:,:-1] # models x policies
+            base_disc_return = paths_new["discounted_return"][:,-1:]
+            # compute pessimistic value difference
+            pessimistic_val_diff, _ = (new_mean_disc_return - base_disc_return).min(axis=0)
+            # select mean with max value difference
+            max_perf_gap, max_policy_idx = torch.max(pessimistic_val_diff, dim=0)
             # check whether to accept the candidate
             if max_perf_gap.item() >= self.epsilon:
-                # print(max_perf_gap.item())
-                new_mean = new_mean[self.worst_model_idx].unsqueeze(0)
+                new_mean = new_mean[max_policy_idx].unsqueeze(0)
             else:
                 new_mean = self.mean_action
+                max_policy_idx = -1
+            self.actions_to_take = paths_new['actions'][0, max_policy_idx]  # since we take only the first action, the model index 0 doesn't matter.
 
-        self.mean_action = new_mean # (1.0 - self.step_size_mean) * self.mean_action +\self.step_size_mean * new_mean
+        self.mean_action = new_mean
         scores, _ = torch.max(paths["discounted_return"], dim=1)  # over particles
         return scores
 
 
     def make_decision(self, observation, infos):
         mode = self.sample_mode
-        if self.pessimism_mode == 'min_return':
-            paths = self.evaluate_action_sequence(observation, self.mean_action.unsqueeze(1), model_idx=self.worst_model_idx)
-            return paths["actions"].squeeze(0).squeeze(0)
+        score = infos[-1].cpu().numpy() # TODO
+
+        if self.pessimism_mode == 'atac':
+            return self.actions_to_take, score
         if mode == 'best_mean':
-            paths = self.evaluate_action_sequence(observation, self.mean_action.unsqueeze(1), model_idx=self.worst_model_idx)
+            paths = self.evaluate_action_sequence(observation, self.mean_action.unsqueeze(1))
             best_idx = torch.argmax(paths['discounted_return'])
             act_seq = paths["actions"][best_idx].squeeze(0) #self.mean_action[best_idx].clone()
         elif mode == 'worst_mean':
-            paths = self.evaluate_action_sequence(observation, self.mean_action.unsqueeze(1), model_idx=self.worst_model_idx)
+            paths = self.evaluate_action_sequence(observation, self.mean_action.unsqueeze(1))
             worst_idx = torch.argmin(paths['discounted_return'])
             # print(paths['discounted_return'], worst_idx)
             act_seq = paths["actions"][worst_idx].squeeze(0) #self.mean_action[worst_idx].clone()
         elif mode == 'softmax_mean':
-            paths = self.evaluate_action_sequence(observation, self.mean_action.unsqueeze(1), model_idx=self.worst_model_idx)
+            paths = self.evaluate_action_sequence(observation, self.mean_action.unsqueeze(1))
             weights = torch.softmax((1.0 / self.beta) *  paths['discounted_return'], dim=0)
             weighted_mean = (weights.T * self.mean_action.T).T
             act_seq = torch.sum(weighted_mean, dim=0).clone()
         elif mode == "softmin_mean":
-            paths = self.evaluate_action_sequence(observation, self.mean_action.unsqueeze(1), model_idx=self.worst_model_idx)
+            paths = self.evaluate_action_sequence(observation, self.mean_action.unsqueeze(1))
             weights = torch.softmax((-1.0 / self.beta) *  paths['discounted_return'], dim=0)
             weighted_mean = (weights.T * self.mean_action.T).T
             act_seq = torch.sum(weighted_mean, dim=0).clone()
@@ -266,4 +269,4 @@ class PMPPIAgent(AbstractMPCAgent):
         else:
             raise ValueError('Sampling mode not recognized')
 
-        return act_seq, infos[-1].cpu().numpy() # TODO
+        return act_seq, score # TODO
