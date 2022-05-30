@@ -152,8 +152,12 @@ def train(*,
 
 
     rollout_score = np.mean([np.sum(p['rewards']) for p in paths])
+    rollout_norm_score = np.mean([env.env.get_normalized_score(
+        np.sum(p['rewards'])) for p in paths])
+
     num_samples = np.sum([p['rewards'].shape[0] for p in paths])
     logger.log_kv('rollout_score', rollout_score)
+    logger.log_kv('rollout_norm_score', rollout_norm_score)
     logger.log_kv('num_samples', num_samples)
     if hasattr(env.env.env, 'evaluate_success') and 'env_infos' in paths[0].keys(): #TODO: Mohak: D4RL dataset has env_infos in different format
         rollout_metric = env.env.env.evaluate_success(paths)
@@ -210,16 +214,20 @@ def train(*,
 
     print("Performing validation rollouts for BC policy ... ")
     eval_paths = evaluate_policy(env, policy, None, noise_level=0.0, real_step=True,
-                                    num_episodes=job_data['eval_rollouts'], visualize=False)
+                                 num_episodes=job_data['eval_rollouts'], visualize=False)
     eval_score_bc = np.mean([np.sum(p['rewards']) for p in eval_paths])
     print('BC', eval_score_bc)
     try:
         eval_metric_bc = env.env.env.evaluate_success(eval_paths)
     except:
         eval_metric_bc = 0.0
+    
+    #Get normalized score for bc
+    norm_score_bc = np.mean([ env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
 
     logger.log_kv('eval_score_bc', eval_score_bc)
     logger.log_kv('eval_metric_bc', eval_metric_bc)
+    logger.log_kv('eval_norm_score_bc', norm_score_bc)
     print_data = sorted(filter(lambda v: np.asarray(
         v[1]).size == 1, logger.get_current_log().items()))
     print(tabulate(print_data))
@@ -338,16 +346,22 @@ def train(*,
             eval_paths = evaluate_policy(agent.env, agent, None, noise_level=0.0,
                                         real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
             eval_score = np.mean([np.sum(p['rewards']) for p in eval_paths])
+            norm_score = np.mean(
+                [env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
+
             print(eval_score)
             # print('scores', np.array(agent._avg_scores))
             print('avg_scores', np.mean(agent._scores))
 
             logger.log_kv('eval_score', eval_score)
+            logger.log_kv('norm_eval_score', norm_score)
             try:
                 eval_metric = env.env.env.evaluate_success(eval_paths)
                 logger.log_kv('eval_metric', eval_metric)
             except:
                 pass
+
+
         else:
             eval_score = -1e8
 
