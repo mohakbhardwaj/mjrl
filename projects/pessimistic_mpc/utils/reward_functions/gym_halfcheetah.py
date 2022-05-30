@@ -15,13 +15,13 @@ def reward_function(paths):
     # path["rewards"] should have shape (num_models, num_traj, horizon)
     # obs = torch.clip(paths["observations"], -10.0, 10.0)
     obs = paths["observations"]#.clip(-10.0, 10.0)
-    act = paths["actions"].clip(-1.0, 1.0)
+    act = paths["actions"]#.clip(-1.0, 1.0)
     reward_run = obs[:, :, :, -9] / 0.02 #x velocity
     reward_ctrl = -0.1 * torch.square(act).sum(axis=-1)
     rewards = reward_run + reward_ctrl
-    paths["rewards"] = rewards  # if rewards.shape[0] > 1 else rewards.ravel()
+    # paths["rewards"] = rewards  # if rewards.shape[0] > 1 else rewards.ravel()
 
-    return paths
+    return rewards
 
 
 def termination_function(paths):
@@ -32,10 +32,10 @@ def termination_function(paths):
     dones = torch.zeros(obs.shape[0], obs.shape[1],
                         obs.shape[2], device=obs.device)
 
-    paths['dones'] = dones
-    paths['terminated'] = torch.any(dones, dim=-1)
+    # paths['dones'] = dones
+    # paths['terminated'] = torch.any(dones, dim=-1)
 
-    return paths
+    return dones
 
 termination_function2 = None
 

@@ -180,8 +180,7 @@ def train(*,
         bc_train_info = pickle.load(
             open(os.path.join(OUT_DIR, 'bc_train_info.pickle'), 'rb'))
         logger.log_kv('BC_error_before', bc_train_info['BC_error_before'])
-        logger.log_kv('BC_error_after', bc_train_info['VF_error_after'])
-
+        logger.log_kv('BC_error_after', bc_train_info['BC_error_after'])
         policy_trained = True
         print('Policy Loaded')
     except FileNotFoundError:
@@ -214,8 +213,16 @@ def train(*,
                                     num_episodes=job_data['eval_rollouts'], visualize=False)
     eval_score_bc = np.mean([np.sum(p['rewards']) for p in eval_paths])
     print('BC', eval_score_bc)
-    logger.log_kv('eval_score_bc', eval_score_bc)
+    try:
+        eval_metric_bc = env.env.env.evaluate_success(eval_paths)
+    except:
+        eval_metric_bc = 0.0
 
+    logger.log_kv('eval_score_bc', eval_score_bc)
+    logger.log_kv('eval_metric_bc', eval_metric_bc)
+    print_data = sorted(filter(lambda v: np.asarray(
+        v[1]).size == 1, logger.get_current_log().items()))
+    print(tabulate(print_data))
     # ===============================================================================
     # Value Function Initialization
     # ===============================================================================
@@ -260,7 +267,7 @@ def train(*,
         models_trained = True
         print('Dynamics model Loaded')
     except FileNotFoundError:
-        models = [WorldModel(state_dim=env.observation_dim, act_dim=env.action_dim, seed=SEED+i,
+        models = [WorldModel(state_dim=env.observation_dim - job_data['context_dim'], act_dim=env.action_dim, seed=SEED+i,
                             **job_data) for i in range(job_data['num_models'])]
         models_trained = False
 

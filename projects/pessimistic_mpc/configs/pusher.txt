@@ -25,7 +25,7 @@
 'num_cpu'        :   1,
 
 #behavior cloning
-'bc_epochs'     : 5,
+'bc_epochs'     : 20,
 'bc_batch_size' : 256,
 'bc_lr'         : 1e-3,
 
@@ -81,14 +81,13 @@
 
 'mpc_params': {
 'n_iters': 1,
-'horizon': 32,
+'horizon': 20, #32,
 'num_particles': 100,
-#'init_cov': 0.001, # 0.001
-'init_std': 0.3162,
-#'init_std': 0.1, 
+#'init_std': 0.3162,
+'init_std': 0.1, 
 'gamma': 0.999,
-'beta': 0.1, # 1.0 #3.33,
-'mixing_factor': 0.2, #0.4, #0.8, #0.6,
+'beta': 3.33, # 0.1
+'mixing_factor': 0.2,
 'td_lam': 0.97,
 'step_size_mean': 1.0,
 'sample_mode': 'best_mean',
@@ -96,7 +95,7 @@
 'hotstart': True,
 'shift_steps': 1,
 'squash_fn': 'clamp',
-'optimize_open_loop': True, # False, True
+'optimize_open_loop': True, 
 'pessimism_mode': 'bonus', # truncation, bonus, discount
 'epsilon': 0.005, 
 'filter_coeffs': [0.2, 0.8, 0.0],

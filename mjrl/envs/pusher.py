@@ -87,9 +87,9 @@ class PusherEnv(mujoco_env.MujocoEnv, utils.EzPickle):
     def get_obs(self):
         return self._get_obs()
 
-    def get_env_state(self):
-        return dict(qp=self.data.qpos.copy(), qv=self.data.qvel.copy(),
-                    cylinder_pos=self.cylinder_pos.copy(), goal_pos=self.goal_pos.copy())
+    # def get_env_state(self):
+    #     return dict(qp=self.data.qpos.copy(), qv=self.data.qvel.copy(),
+    #                 cylinder_pos=self.cylinder_pos.copy(), goal_pos=self.goal_pos.copy())
 
    # --------------------------------
     # get and set states

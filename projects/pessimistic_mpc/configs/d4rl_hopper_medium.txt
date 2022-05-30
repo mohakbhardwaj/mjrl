@@ -12,8 +12,8 @@
 'device'        :   'cuda',
 'learn_reward'  :   False,
 'reward_file'   :   './utils/reward_functions/gym_hopper.py',
-
 'pessimism_coef':   10.0,  # 10.0
+'context_dim'   :    0,
 #'truncate_reward' : 0.0,
 'exp_notes'     :   'Example to illustrate MOReL on a D4RL task.',
 
