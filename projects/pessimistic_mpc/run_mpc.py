@@ -44,7 +44,13 @@ FILE_PATH = os.path.dirname(os.path.abspath(__file__))  # all paths specified ar
 def train(*,
           job_data,
           output='exp_results',
+          datapath=None,
           seed=123):
+
+    # Debug
+    if datapath is not None:
+        with open(os.path.join(datapath, 'test.txt'),'r') as f:
+            print("DEBUG", f.readlines())
 
     ENV_NAME = job_data['env_name']
     if seed is not None: job_data['seed'] = seed
@@ -221,7 +227,7 @@ def train(*,
         eval_metric_bc = env.env.env.evaluate_success(eval_paths)
     except:
         eval_metric_bc = 0.0
-    
+
     #Get normalized score for bc
     norm_score_bc = np.mean([ env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
 
