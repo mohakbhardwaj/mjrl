@@ -20,7 +20,7 @@ method = 'rl_nexus.hp_tuning.hp_tuning.train' # so we call the method below as l
 
 
 # $datastore/pmpc/...  # TODO
-def train(config, seed, **job_data):
+def train(config, seed, datapath, **job_data):
     """ config: path (relative to run_mpc.py) to the config file. A default job_data dict is loaded from this file.
         job_data: a dict that contains the hyperparameters to overwrite the default job_data.
     """
@@ -41,6 +41,7 @@ def train(config, seed, **job_data):
 
     return train(job_data=job_data,
                  output='../results/exp_data',
+                 datapath=datapath,
                  seed=seed)
 
 def run(hp_tuning_mode='grid',
@@ -55,6 +56,7 @@ def run(hp_tuning_mode='grid',
 
     config = dict(
         seed='randint',
+        datapath='$datastore/pessimistic_mpc/'
     )
 
     xt_setup = {  # mujoco200
@@ -102,7 +104,7 @@ def run(hp_tuning_mode='grid',
                   code_paths=code_paths,
                   docker_image=docker_image,
                   compute_target=compute_target,
-                  remote_run=False,
+                #   remote_run=False,
                   )
 
 if __name__ == '__main__':

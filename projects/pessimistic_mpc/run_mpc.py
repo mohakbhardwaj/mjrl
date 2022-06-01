@@ -340,76 +340,77 @@ def train(*,
                     truncate_lim=job_data['truncate_lim'], truncate_reward=job_data['truncate_reward'],
                     device=job_data['device'])
 
+    # TODO: Fix the extra run
     best_perf = -1e8
     for outer_iter in range(job_data['num_iter']):
         ts = timer.time()
         agent.to(job_data['device'])
 
         # evaluate true policy performance
-        if job_data['eval_rollouts'] > 0:
-            print("Performing validation rollouts ... ")
-            # set the policy device back to CPU for env sampling
-            eval_paths = evaluate_policy(agent.env, agent, None, noise_level=0.0,
-                                        real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
-            eval_score = np.mean([np.sum(p['rewards']) for p in eval_paths])
-            norm_score = np.mean(
-                [env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
+        assert job_data['eval_rollouts'] > 0
+        print("Performing validation rollouts ... ")
+        # set the policy device back to CPU for env sampling
+        eval_paths = evaluate_policy(agent.env, agent, None, noise_level=0.0,
+                                    real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
+        eval_score = np.mean([np.sum(p['rewards']) for p in eval_paths])
+        norm_score = np.mean(
+            [env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
 
-            print(eval_score)
-            # print('scores', np.array(agent._avg_scores))
-            print('avg_scores', np.mean(agent._scores))
+        print(eval_score)
+        # print('scores', np.array(agent._avg_scores))
+        print('avg_scores', np.mean(agent._scores))
 
-            logger.log_kv('eval_score', eval_score)
-            logger.log_kv('norm_eval_score', norm_score)
-            try:
-                eval_metric = env.env.env.evaluate_success(eval_paths)
-                logger.log_kv('eval_metric', eval_metric)
-            except:
-                pass
+        logger.log_kv('eval_score', eval_score)
+        logger.log_kv('norm_eval_score', norm_score)
+        try:
+            eval_metric = env.env.env.evaluate_success(eval_paths)
+            logger.log_kv('eval_metric', eval_metric)
+        except:
+            pass
 
 
-        else:
-            eval_score = -1e8
-
-        # track best performing policy
-        policy_score = eval_score if job_data['eval_rollouts'] > 0 else rollout_score
-        if policy_score > best_perf:
-            # safe as policy network is clamped to CPU
-            best_policy = copy.deepcopy(policy)
-            best_perf = policy_score
+        # # track best performing policy
+        # policy_score = eval_score if job_data['eval_rollouts'] > 0 else rollout_score
+        # if policy_score > best_perf:
+        #     # safe as policy network is clamped to CPU
+        #     best_policy = copy.deepcopy(policy)
+        #     best_perf = policy_score
 
         tf = timer.time()
         logger.log_kv('iter_time', tf-ts)
-        for key in agent.logger.log.keys():
-            logger.log_kv(key, agent.logger.log[key][-1])
+        # for key in agent.logger.log.keys():
+        #     logger.log_kv(key, agent.logger.log[key][-1])
+        # print_data = sorted(filter(lambda v: np.asarray(v[1]).size == 1,
+        #                         logger.get_current_log_print().items()))
         print_data = sorted(filter(lambda v: np.asarray(v[1]).size == 1,
-                                logger.get_current_log_print().items()))
+                                agent.logger.get_current_log_print().items()))
+
         print(tabulate(print_data))
         logger.save_log(OUT_DIR+'/logs')
 
-        if outer_iter > 0 and outer_iter % job_data['save_freq'] == 0:
-            # convert to CPU before pickling
-            agent.to('cpu')
-            # make observation mask part of policy for easy deployment in environment
-            old_in_scale = policy.in_scale
-            for pi in [policy, best_policy]:
-                pi.set_transformations(in_scale=1.0 / env.obs_mask)
-            pickle.dump(agent, open(OUT_DIR + '/iterations/agent_' +
-                        str(outer_iter) + '.pickle', 'wb'))
-            pickle.dump(policy, open(OUT_DIR + '/iterations/policy_' +
-                        str(outer_iter) + '.pickle', 'wb'))
-            pickle.dump(best_policy, open(
-                OUT_DIR + '/iterations/best_policy.pickle', 'wb'))
-            agent.to(job_data['device'])
-            for pi in [policy, best_policy]:
-                pi.set_transformations(in_scale=old_in_scale)
-            make_train_plots(log=logger.log, keys=['rollout_score', 'eval_score', 'rollout_metric', 'eval_metric'],
-                            x_scale=float(job_data['act_repeat']), y_scale=1.0, save_loc=OUT_DIR+'/logs/')
+        # if outer_iter > 0 and outer_iter % job_data['save_freq'] == 0:
+        #     # convert to CPU before pickling
+        #     agent.to('cpu')
+        #     # make observation mask part of policy for easy deployment in environment
+        #     old_in_scale = policy.in_scale
+        #     for pi in [policy, best_policy]:
+        #         pi.set_transformations(in_scale=1.0 / env.obs_mask)
+        #     pickle.dump(agent, open(OUT_DIR + '/iterations/agent_' +
+        #                 str(outer_iter) + '.pickle', 'wb'))
+        #     pickle.dump(policy, open(OUT_DIR + '/iterations/policy_' +
+        #                 str(outer_iter) + '.pickle', 'wb'))
+        #     pickle.dump(best_policy, open(
+        #         OUT_DIR + '/iterations/best_policy.pickle', 'wb'))
+        #     agent.to(job_data['device'])
+        #     for pi in [policy, best_policy]:
+        #         pi.set_transformations(in_scale=old_in_scale)
+        #     make_train_plots(log=logger.log, keys=['rollout_score', 'eval_score', 'rollout_metric', 'eval_metric'],
+        #                     x_scale=float(job_data['act_repeat']), y_scale=1.0, save_loc=OUT_DIR+'/logs/')
 
-    # final save
-    pickle.dump(agent, open(OUT_DIR + '/iterations/agent_final.pickle', 'wb'))
-    policy.set_transformations(in_scale=1.0 / env.obs_mask)
-    pickle.dump(policy, open(OUT_DIR + '/iterations/policy_final.pickle', 'wb'))
+    # # final save
+    # pickle.dump(agent, open(OUT_DIR + '/iterations/agent_final.pickle', 'wb'))
+    # policy.set_transformations(in_scale=1.0 / env.obs_mask)
+    # pickle.dump(policy, open(OUT_DIR + '/iterations/policy_final.pickle', 'wb'))
 
     return best_perf
 
