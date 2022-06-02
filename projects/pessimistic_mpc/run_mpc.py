@@ -152,8 +152,7 @@ def train(*,
     try:
         paths = pickle.load(open(job_data['data_file'], 'rb'))
     except FileNotFoundError:
-        if readonly: raise Exception('No cached model/data is found but the mode is read-only.')
-
+        # if readonly: raise Exception('No cached model/data is found but the mode is read-only.')
         from prep_d4rl_dataset import prep_d4rl_dataset
         paths =  prep_d4rl_dataset(env_name=ENV_NAME,
                                 output=DATA_DIR,
@@ -167,7 +166,7 @@ def train(*,
             np.sum(p['rewards'])) for p in paths])
     except:
         rollout_norm_score = 0.0
-        
+
     num_samples = np.sum([p['rewards'].shape[0] for p in paths])
     logger.log_kv('rollout_score', rollout_score)
     logger.log_kv('rollout_norm_score', rollout_norm_score)
