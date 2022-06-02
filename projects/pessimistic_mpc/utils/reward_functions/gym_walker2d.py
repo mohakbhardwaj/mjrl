@@ -23,9 +23,8 @@ def reward_function(paths):
     ang = obs[:, :, :, 1]
     alive_bonus = 1.0 * (height > 0.8) * (height < 2.0) * (torch.abs(ang) < 1.0)
     rewards = vel_x + alive_bonus - 1e-3*power
-    paths["rewards"] = rewards #if rewards.shape[0] > 1 else rewards.ravel()
 
-    return paths
+    return rewards
 
 
 
@@ -48,16 +47,9 @@ def termination_function(paths):
     dones = torch.cumsum(dones, dim=-1)
     dones[dones > 0] = 1.0
 
-    paths['dones'] = dones
-    paths['terminated'] = torch.any(dones, dim=-1)
-    return paths
+    # paths['dones'] = dones
+    # paths['terminated'] = torch.any(dones, dim=-1)
+    return dones
 
 reward_function2 = None
 termination_function2 = None
-
-
-
-
-if __name__ == "__main__":
-    #test the above functions
-    pass

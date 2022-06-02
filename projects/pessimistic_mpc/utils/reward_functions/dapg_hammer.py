@@ -12,9 +12,24 @@ def reward_function(paths):
     # path["rewards"] should have shape (num_models, num_traj, horizon)
     # obs = torch.clip(paths["observations"], -10.0, 10.0)
     # def get_obs(self):
+
+    #     qp = self.data.qpos.ravel()
+    #     obj_vel = self.data.qvel[-6:].ravel()
+    #     obj_pos = self.data.body_xpos[self.obj_bid].ravel()
+    #     desired_pos = self.data.site_xpos[self.eps_ball_sid].ravel()
+    #     obj_orien = (self.data.site_xpos[self.obj_t_sid] - self.data.site_xpos[self.obj_b_sid])/self.pen_length
+    #     desired_orien = (self.data.site_xpos[self.tar_t_sid] - self.data.site_xpos[self.tar_b_sid])/self.tar_length
+    #     return np.concatenate([qp[:-6], obj_pos, obj_vel, obj_orien, desired_orien,
+    #                            obj_pos-desired_pos, obj_orien-desired_orien])
+
+
+        # obj_pos  = self.data.body_xpos[self.obj_bid].ravel()
+        # desired_loc = self.data.site_xpos[self.eps_ball_sid].ravel()
+        # obj_orien = (self.data.site_xpos[self.obj_t_sid] - self.data.site_xpos[self.obj_b_sid])/self.pen_length
+        # desired_orien = (self.data.site_xpos[self.tar_t_sid] - self.data.site_xpos[self.tar_b_sid])/self.tar_length
+
     obs = paths["observations"]
     act = paths["actions"]
-    horizon = obs.shape[2]
     obj_pos = obs[:,:,:,24:27]
     obj_vel = obs[:,:,:,27:33]
     obj_orien = obs[:,:,:,33:36]
@@ -22,10 +37,6 @@ def reward_function(paths):
     obj_pos_goal_disp = obs[:,:,:,39:42]
     obj_orien_goal_disp = obs[:,:,:,42:]
 
-    #ignore desired orien predictions for now
-    # start_desired_orien = desired_orien[:,:,0].unsqueeze(-2)
-    # desired_orien = start_desired_orien.repeat(1,1,horizon,1)
-    
     dist = torch.norm(obj_pos_goal_disp, dim=-1)
     # pos cost
     dist_reward = -1.0 * dist
@@ -35,6 +46,10 @@ def reward_function(paths):
     rewards = dist_reward + orien_similarity
 
     # bonus for being close to desired orientation
+    #     if dist < 0.075 and orien_similarity > 0.9:
+    #         reward += 10
+    #     if dist < 0.075 and orien_similarity > 0.95:
+    #         reward += 50
     bonus_mask_1 = torch.logical_and(dist < 0.075 , orien_similarity > 0.9)
     bonus_mask_2 = torch.logical_and(dist < 0.075, orien_similarity > 0.95)
     rewards[bonus_mask_1] += 10.0
@@ -43,6 +58,13 @@ def reward_function(paths):
     #penalty for dropping pen
     obj_z = obj_pos[:,:,:,2]
     rewards[obj_z < 0.075] -= 5.0
+
+    # # pos cost
+    # dist = np.linalg.norm(obj_pos-desired_loc)
+    # reward = -dist
+    # # orien cost
+    # orien_similarity = np.dot(obj_orien, desired_orien)
+    # reward += orien_similarity
 
     # if ADD_BONUS_REWARDS:
     #     # bonus for being close to desired orientation
@@ -56,6 +78,10 @@ def reward_function(paths):
     # if obj_pos[2] < 0.075:
     #     reward -= 5
     #     done = True if not starting_up else False
+
+    # goal_achieved = True if (dist < 0.075 and orien_similarity > 0.95) else False
+
+    # return self.get_obs(), reward, done, dict(goal_achieved=goal_achieved)
 
 
     # paths["rewards"] = rewards  # if rewards.shape[0] > 1 else rewards.ravel()

@@ -5,7 +5,7 @@
 'env_name'      :   'kitchen-complete-v0',
 'act_repeat'    :   1,
 'seed'          :   123,
-'num_iter'      :   2,
+'num_iter'      :   1,
 'eval_rollouts' :   5,
 'num_models'    :   4,
 'save_freq'     :   25,

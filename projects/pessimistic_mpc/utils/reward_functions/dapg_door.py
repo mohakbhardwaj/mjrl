@@ -3,7 +3,7 @@ import torch
 
 # obs_mask = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 0.02,
 #                     0.02, 0.02, 0.02, 0.02, 0.02])
-obs_mask = np.ones(45)
+obs_mask = np.ones(39)
 
 def reward_function(paths):
     # path has two keys: observations and actions

@@ -3,10 +3,11 @@ import numpy as np
 
 # observaion mask for scaling
 # 1.0 for positions and dt=0.02 for velocities
-obs_mask = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-                     1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-                     1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-                     1.0, 1.0, 1.0, 1.0, 1.0])
+# obs_mask = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+#                      1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+#                      1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+#                      1.0, 1.0, 1.0, 1.0, 1.0])
+obs_mask = np.ones(29)
 
 def reward_function(paths):
     # path has two keys: observations and actions

@@ -5,7 +5,7 @@
 'env_name'      :   'halfcheetah-medium-v2',
 'act_repeat'    :   1,
 'seed'          :   123,
-'num_iter'      :   2,
+'num_iter'      :   1,
 'eval_rollouts' :   5,
 'num_models'    :   4,
 'save_freq'     :   25,
@@ -59,7 +59,7 @@
 # MPC Params
 'mpc_params': {
 'n_iters': 1,
-'horizon': 10,
+'horizon': 20,
 'num_particles': 100,
 'init_std': 0.01,
 'gamma': 0.999,
@@ -73,8 +73,8 @@
 'shift_steps': 1,
 'squash_fn': 'clamp',
 'optimize_open_loop': True,
-'pessimism_mode': 'bonus',
-'epsilon': 0.005, 
+'pessimism_mode': 'atac',
+'epsilon': 1.0, 
 'filter_coeffs': [0.2, 0.8, 0.0],
 
 }

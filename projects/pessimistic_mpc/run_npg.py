@@ -95,8 +95,8 @@ e.action_space.seed(SEED)
 policy = MLP(e.spec, hidden_sizes=job_data['policy_size'],
              seed=SEED, init_log_std=job_data['init_log_std'],
              min_log_std=job_data['min_log_std'])
-baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=job_data['vf_batch_size'], hidden_sizes=job_data['vf_hidden_size'],
-                       epochs=job_data['vf_epochs'], learn_rate=job_data['vf_learn_rate'])
+baseline = MLPBaseline(e.spec, reg_coef=1e-3, batch_size=job_data['val_fn_batch_size'], hidden_sizes=job_data['val_fn_size'],
+                       epochs=job_data['val_fn_epochs'], learn_rate=job_data['val_fn_lr'])
 
 # Construct the algorithm
 agent = NPG(e, policy, baseline, normalized_step_size=job_data['step_size'],

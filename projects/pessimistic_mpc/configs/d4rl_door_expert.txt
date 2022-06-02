@@ -2,7 +2,7 @@
 
 # general inputs
 
-'env_name'      :   'hopper-medium-v2',
+'env_name'      :   'door-expert-v1',
 'act_repeat'    :   1,
 'seed'          :   123,
 'num_iter'      :   1,
@@ -11,16 +11,17 @@
 'save_freq'     :   25,
 'device'        :   'cuda',
 'learn_reward'  :   False,
-'reward_file'   :   './utils/reward_functions/gym_hopper.py',
-
-'pessimism_coef':   3.0,
-'truncate_reward' : 0.0,
-'exp_notes'     :   'Example to illustrate MOReL on a D4RL task.',
+'reward_file'   :   './utils/reward_functions/dapg_door.py',
+'pessimism_coef':   10.0,  # 10.0
+'context_dim'   :    0,
+#'truncate_reward' : 0.0,
+'exp_notes'     :   'PMPC on D4RL Adroit Door task',
 
 #behavior cloning
 'bc_epochs'     : 20,
 'bc_batch_size' : 256,
 'bc_lr'         : 1e-3,
+'bc_loss_type'  : 'MSE',
 
 # dynamics learning
 
@@ -32,6 +33,9 @@
 'fit_epochs'    :   25,
 'refresh_fit'   :   False,
 'max_steps'     :   1e8,
+'no_o_whitening':   True,
+'slackness'     :   0.1,
+'checkpoint_freq' : 1,
 
 # NPG params
 
@@ -46,15 +50,22 @@
 'horizon'       :   700,
 'npg_hp'        :   dict(FIM_invert_args={'iters': 20, 'damping': 1e-3}),
 
+#Value function params
+'val_fn_size': (512, 512),
+'val_fn_lr': 1e-3,
+'val_fn_wd': 0.0,
+'val_fn_epochs': 20,
+'val_fn_batch_size': 256,
+
 # MPC Params
 'mpc_params': {
 'n_iters': 1,
-'horizon': 10,
+'horizon': 40,
 'num_particles': 100,
-'init_cov': 0.1,
+'init_std': 0.1,
 'gamma': 0.999,
-'beta': 3.33,
-'mixing_factor': 0.8, #0.6,
+'beta': 1.0, #3.33
+'mixing_factor': 0.2,
 'td_lam': 0.97,
 'step_size_mean': 1.0,
 'sample_mode': 'best_mean',
@@ -62,8 +73,11 @@
 'hotstart': True,
 'shift_steps': 1,
 'squash_fn': 'clamp',
-'optimize_open_loop': False,
-'filter_coeffs': [0.8, 0.2, 0.0],
+'optimize_open_loop': True, # False, True
+'pessimism_mode': 'atac', # truncation, bonus, discount
+'epsilon': 0.1, 
+'filter_coeffs': [0.2, 0.8, 0.0],
+'terminal_reward': -5.0,
 
 }
 

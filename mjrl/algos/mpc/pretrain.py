@@ -21,7 +21,6 @@ def _train_models(models, paths, seed=0, checkpoint_freq=1, **job_data):
                 model_checkpoints=[ [] for _ in range(num_checkpoints)],
                 epoch=[ [] for _ in range(num_checkpoints)])
     context_dim = job_data['context_dim']
-
     s, a, sp = _unpack_paths(paths)
     job_data_clone = copy.copy(job_data)
     job_data_clone['fit_epochs'] = 1
@@ -46,6 +45,7 @@ def _train_models(models, paths, seed=0, checkpoint_freq=1, **job_data):
         if context_dim > 0:
             ensemble_model = WorldModelWithContext(ensemble_size=len(models), state_dim=s.shape[1], act_dim=a.shape[1], seed=seed, **job_data)
         else:
+            
             ensemble_model = EnsembleWorldModel(ensemble_size=len(models), state_dim=s.shape[1], act_dim=a.shape[1], seed=seed, **job_data)
         ensemble_model.set_dynamics_from_list(models)
         info['model_checkpoints'][i] = ensemble_model
