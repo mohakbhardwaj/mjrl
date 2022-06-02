@@ -192,10 +192,14 @@ def train(*,
             policy.min_log_std[:] = tensor_utils.tensorize(min_log_std)
             policy.set_param_values(policy.get_param_values())
 
-        bc_train_info = pickle.load(
-            open(os.path.join(MODEL_DIR, 'bc_train_info.pickle'), 'rb'))
-        logger.log_kv('BC_error_before', bc_train_info['BC_error_before'])
-        logger.log_kv('BC_error_after', bc_train_info['BC_error_after'])
+        try:
+            bc_train_info = pickle.load(
+                open(os.path.join(MODEL_DIR, 'bc_train_info.pickle'), 'rb'))
+            logger.log_kv('BC_error_before', bc_train_info['BC_error_before'])
+            logger.log_kv('BC_error_after', bc_train_info['BC_error_after'])
+        except FileNotFoundError:
+            pass
+
         print('Policy Loaded')
 
     except FileNotFoundError:
@@ -251,10 +255,13 @@ def train(*,
     try:
         value_fn = pickle.load(open(job_data['init_val_fn'], 'rb'))
         # value_fn.set_params(value_fn.get_params())
-        val_fn_train_info = pickle.load(open(os.path.join(MODEL_DIR,'val_fn_train_info.pickle'), 'rb'))
-        logger.log_kv('time_VF', val_fn_train_info['time_vf'])
-        logger.log_kv('VF_error_before', val_fn_train_info['VF_error_before'])
-        logger.log_kv('VF_error_after', val_fn_train_info['VF_error_after'])
+        try:
+            val_fn_train_info = pickle.load(open(os.path.join(MODEL_DIR,'val_fn_train_info.pickle'), 'rb'))
+            logger.log_kv('time_VF', val_fn_train_info['time_vf'])
+            logger.log_kv('VF_error_before', val_fn_train_info['VF_error_before'])
+            logger.log_kv('VF_error_after', val_fn_train_info['VF_error_after'])
+        except FileNotFoundError:
+            pass
 
     except FileNotFoundError:
         if readonly: raise Exception('No cached model/data is found but the mode is read-only.')

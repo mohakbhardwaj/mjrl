@@ -23,7 +23,7 @@ def train(config, seed, modelpath, **job_data):
         job_data: a dict that contains the hyperparameters to overwrite the default job_data.
     """
     from rl_nexus.mjrl.projects.pessimistic_mpc.run_mpc import train
-    from rl_nexus.hp_tuning.utils import  parse_and_update_dict
+    from rl_nexus.hp_tuning_tools.utils import  parse_and_update_dict
     import os, sys
 
     # Load config
