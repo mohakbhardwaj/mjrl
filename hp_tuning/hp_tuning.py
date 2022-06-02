@@ -16,29 +16,27 @@ docker_image = 'mujoco'
 azure_service='dilbertbatch' #'dilbertbatch' #'rdlbatches' # 'rdlbatches' # dilbertbatch'
 
 code_paths = os.path.dirname(__file__)  # This file will be uploaded as rl_nexus/hp_tuning/hp_tuning.py
-method = 'rl_nexus.hp_tuning.hp_tuning.train' # so we call the method below as left.
+method = 'rl_nexus.hp_tuning.hp_tuning.train' # so we can call the method below.
 
-
-def train(config, seed, datapath, **job_data):
+def train(config, seed, modelpath, **job_data):
     """ config: path (relative to run_mpc.py) to the config file. A default job_data dict is loaded from this file.
         job_data: a dict that contains the hyperparameters to overwrite the default job_data.
     """
     from rl_nexus.mjrl.projects.pessimistic_mpc.run_mpc import train
-    from rl_nexus.mjrl.mjrl.utils.utils import parse_and_update_dict
+    from rl_nexus.hp_tuning.utils import  parse_and_update_dict
     import os, sys
 
     # Load config
     base_path = os.path.join(os.getcwd(),'mjrl','projects','pessimistic_mpc')
-    path = os.path.join(base_path, config)
     sys.path.append(base_path)
-    with open(path, 'r') as f:
+    with open(os.path.join(base_path, config), 'r') as f:
         job_data0 = eval(f.read())
 
     job_data = parse_and_update_dict(job_data0, job_data, token='-')
 
     return train(job_data=job_data,
                  output='../results/exp_data',
-                 datapath=datapath,
+                 modelpath=modelpath,
                  seed=seed)
 
 def run(hp_tuning_mode='grid',
@@ -47,13 +45,13 @@ def run(hp_tuning_mode='grid',
 
     hps_dict = {
         'config':['configs/d4rl_hopper_medium.txt'],
-        'mpc_params-horizon':[10, 20],
+        'mpc_params-horizon':[10, 20, 30],
     }
 
 
     config = dict(
         seed='randint',
-        modelpath='$datastore/pessimistic_mpc/cached_models'
+        modelpath='$datastore/pessimistic_mpc/cached_models',
         readonly=True,
     )
 
@@ -93,12 +91,8 @@ def run(hp_tuning_mode='grid',
                   )
 
 if __name__ == '__main__':
-
     import argparse
     parser = argparse.ArgumentParser()
-
-    # parser.add_argument('--version', type=int, default=0)
     parser.add_argument('--hp_tuning_mode', type=str, default='grid')
     parser.add_argument('--n_seeds_per_hp', type=int, default=3)
-
     run(**vars(parser.parse_args()))
