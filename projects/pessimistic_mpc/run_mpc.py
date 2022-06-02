@@ -44,13 +44,10 @@ FILE_PATH = os.path.dirname(os.path.abspath(__file__))  # all paths specified ar
 def train(*,
           job_data,
           output='exp_results',
-          datapath=None,
+          datapath='datasets',
+          modelpath='cached_models',  # path to cached data (e.g. pretrained models)
+          readonly=True,
           seed=123):
-
-    # Debug
-    if datapath is not None:
-        with open(os.path.join(datapath, 'test.txt'),'r') as f:
-            print("DEBUG", f.readlines())
 
     ENV_NAME = job_data['env_name']
     if seed is not None: job_data['seed'] = seed
@@ -59,15 +56,21 @@ def train(*,
     job_data['base_seed'] = SEED
 
     OUT_DIR = os.path.join(output, ENV_NAME+'_'+str(SEED))
-    if not os.path.exists(output):
-        os.mkdir(output)
-    if not os.path.exists(OUT_DIR):
-        os.mkdir(OUT_DIR)
-    if not os.path.exists(OUT_DIR+'/iterations'):
-        os.mkdir(OUT_DIR+'/iterations')
-    if not os.path.exists(OUT_DIR+'/logs'):
-        os.mkdir(OUT_DIR+'/logs')
+    MODEL_DIR = os.path.join(modelpath, ENV_NAME)
+    DATA_DIR = os.path.join(datapath, ENV_NAME)
 
+    if not os.path.exists(output):
+        os.makedirs(output)
+    if not os.path.exists(OUT_DIR):
+        os.makedirs(OUT_DIR)
+    if not os.path.exists(MODEL_DIR):
+        os.makedirs(MODEL_DIR)
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR)
+    if not os.path.exists(OUT_DIR+'/iterations'):
+        os.makedirs(OUT_DIR+'/iterations')
+    if not os.path.exists(OUT_DIR+'/logs'):
+        os.makedirs(OUT_DIR+'/logs')
 
     # Unpack args and make files for easy access
     logger = DataLog()
@@ -78,7 +81,7 @@ def train(*,
         job_data['eval_rollouts'] = 0
     if 'save_freq' not in job_data.keys():
         job_data['save_freq'] = 10
-    if 'device' not in job_data.keys():
+    if 'device' not in job_data.keys() or not torch.cuda.is_available():
         job_data['device'] = 'cpu'
     if 'hvp_frac' not in job_data.keys():
         job_data['hvp_frac'] = 1.0
@@ -99,11 +102,10 @@ def train(*,
 
     assert job_data['start_state'] in ['init', 'buffer']
     # assert 'data_file' in job_data.keys()
-    job_data['data_file'] = os.path.join('datasets', ENV_NAME+'.pickle')
-    job_data['model_file'] = os.path.join(OUT_DIR, 'ensemble_model.pickle')
-    job_data['init_policy'] = os.path.join(OUT_DIR, 'bc_policy.pickle')
-    job_data['init_val_fn'] = os.path.join(OUT_DIR, 'val_fn.pickle')
-
+    job_data['data_file'] = os.path.join(DATA_DIR, 'offline_data.pickle')
+    job_data['model_file'] = os.path.join(MODEL_DIR, 'ensemble_model.pickle')
+    job_data['init_policy'] = os.path.join(MODEL_DIR, 'bc_policy.pickle')
+    job_data['init_val_fn'] = os.path.join(MODEL_DIR, 'val_fn.pickle')
 
     # ===============================================================================
     # Helper functions
@@ -150,11 +152,13 @@ def train(*,
     try:
         paths = pickle.load(open(job_data['data_file'], 'rb'))
     except FileNotFoundError:
+        if readonly: raise Exception('No cached model/data is found but the mode is read-only.')
+
         from prep_d4rl_dataset import prep_d4rl_dataset
         paths =  prep_d4rl_dataset(env_name=ENV_NAME,
-                                   output='datasets',
-                                   include=job_data.get('reward_file', None),
-                                   seed=SEED)
+                                output=DATA_DIR,
+                                include=job_data.get('reward_file', None),
+                                seed=SEED)
 
 
     rollout_score = np.mean([np.sum(p['rewards']) for p in paths])
@@ -176,7 +180,6 @@ def train(*,
     # ===============================================================================
     # Behavior Cloning Initialization
     # ===============================================================================
-
     try:
         policy = pickle.load(open(job_data['init_policy'], 'rb'))
         policy.set_param_values(policy.get_param_values())
@@ -191,18 +194,17 @@ def train(*,
             policy.set_param_values(policy.get_param_values())
 
         bc_train_info = pickle.load(
-            open(os.path.join(OUT_DIR, 'bc_train_info.pickle'), 'rb'))
+            open(os.path.join(MODEL_DIR, 'bc_train_info.pickle'), 'rb'))
         logger.log_kv('BC_error_before', bc_train_info['BC_error_before'])
         logger.log_kv('BC_error_after', bc_train_info['BC_error_after'])
-        policy_trained = True
         print('Policy Loaded')
+
     except FileNotFoundError:
+        if readonly: raise Exception('No cached model/data is found but the mode is read-only.')
+
         policy = MLP(env.spec, seed=SEED, hidden_sizes=job_data['policy_size'],
                 init_log_std=job_data['init_log_std'], min_log_std=job_data['min_log_std'])
-        policy_trained = False
 
-
-    if not policy_trained:
         from mjrl.algos.behavior_cloning import BC
         print('Training behavior cloning')
         policy.to(job_data['device'])
@@ -210,14 +212,14 @@ def train(*,
                     lr=job_data['bc_lr'], loss_type='MSE') #epochs=5
         error_before, error_after = bc_agent.train()
         print('Saving behavior cloned policy')
-        pickle.dump(policy, open(OUT_DIR + '/bc_policy.pickle', 'wb'))
+        pickle.dump(policy, open(job_data['init_policy'], 'wb'))
 
         logger.log_kv('BC_error_before', error_before)
         logger.log_kv('BC_error_after', error_after)
         bc_stats = dict(BC_error_before=error_before,
                         BC_error_after=error_after)
         pickle.dump(bc_stats, open(
-            OUT_DIR + '/bc_train_info.pickle', 'wb'))
+            MODEL_DIR + '/bc_train_info.pickle', 'wb'))
 
 
 
@@ -245,24 +247,24 @@ def train(*,
     # ===============================================================================
     # Value Function Initialization
     # ===============================================================================
+    process_samples.compute_returns(paths, gamma)
+
     try:
         value_fn = pickle.load(open(job_data['init_val_fn'], 'rb'))
         # value_fn.set_params(value_fn.get_params())
-        val_fn_train_info = pickle.load(open(os.path.join(OUT_DIR,'val_fn_train_info.pickle'), 'rb'))
+        val_fn_train_info = pickle.load(open(os.path.join(MODEL_DIR,'val_fn_train_info.pickle'), 'rb'))
         logger.log_kv('time_VF', val_fn_train_info['time_vf'])
         logger.log_kv('VF_error_before', val_fn_train_info['VF_error_before'])
         logger.log_kv('VF_error_after', val_fn_train_info['VF_error_after'])
-        value_fn_trained = True
+
     except FileNotFoundError:
+        if readonly: raise Exception('No cached model/data is found but the mode is read-only.')
+
         value_fn = ValueFunctionNet(state_dim=env.observation_dim, hidden_size=job_data['val_fn_size'],
                             epochs=job_data['val_fn_epochs'], reg_coef=job_data['val_fn_wd'],
                             batch_size=job_data['val_fn_batch_size'], learn_rate=job_data['val_fn_lr'],
                             device=job_data['device'])
-        value_fn_trained = False
 
-    process_samples.compute_returns(paths, gamma)
-
-    if not value_fn_trained:
         print('Training value function')
         # compute returns
         ts = timer.time()
@@ -272,31 +274,27 @@ def train(*,
         logger.log_kv('VF_error_before', error_before)
         logger.log_kv('VF_error_after', error_after)
         print('Saving value function')
-        pickle.dump(value_fn, open(OUT_DIR + '/val_fn.pickle', 'wb'))
+        pickle.dump(value_fn, open(job_data['init_val_fn'], 'wb'))
         vf_stats = dict(VF_error_before=error_before, VF_error_after=error_after, time_vf=time_vf)
-        pickle.dump(vf_stats, open(OUT_DIR + '/val_fn_train_info.pickle', 'wb'))
+        pickle.dump(vf_stats, open(MODEL_DIR + '/val_fn_train_info.pickle', 'wb'))
         logger.log_kv('eval_score_bc', eval_score_bc)
 
     # ===============================================================================
     # Model Training
     # ===============================================================================
-
     try:
         ensemble_model = pickle.load(open(job_data['model_file'], 'rb'))
-        models_trained = True
         print('Dynamics model Loaded')
     except FileNotFoundError:
+        if readonly: raise Exception('No cached model/data is found but the mode is read-only.')
+
         models = [WorldModel(state_dim=env.observation_dim - job_data['context_dim'], act_dim=env.action_dim, seed=SEED+i,
                             **job_data) for i in range(job_data['num_models'])]
-        models_trained = False
-
-
-    if not models_trained:
         ts = timer.time()
         ensemble_model, model_train_info = train_dynamics_models(models, paths, **job_data)
         print('Saving trained dynamics models')
-        pickle.dump(ensemble_model, open(os.path.join(OUT_DIR, 'ensemble_model.pickle'), 'wb'))
-        pickle.dump(model_train_info, open(os.path.join(OUT_DIR, 'model_train_info.pickle'), 'wb'))
+        pickle.dump(ensemble_model, open(job_data['model_file'], 'wb'))
+        pickle.dump(model_train_info, open(os.path.join(MODEL_DIR, 'model_train_info.pickle'), 'wb'))
         tf = timer.time()
         logger.log_kv('model_learning_time', tf-ts)
 
@@ -345,8 +343,7 @@ def train(*,
                     truncate_lim=job_data['truncate_lim'], truncate_reward=job_data['truncate_reward'],
                     device=job_data['device'])
 
-    # TODO: Fix the extra run
-    best_perf = -1e8
+
     for outer_iter in range(job_data['num_iter']):
         ts = timer.time()
         agent.to(job_data['device'])
@@ -354,10 +351,10 @@ def train(*,
         # evaluate true policy performance
         assert job_data['eval_rollouts'] > 0
         print("Performing validation rollouts ... ")
-        # set the policy device back to CPU for env sampling
         eval_paths = evaluate_policy(agent.env, agent, None, noise_level=0.0,
-                                    real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
+                                     real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
         eval_score = np.mean([np.sum(p['rewards']) for p in eval_paths])
+<<<<<<< HEAD
         try:
             norm_score = np.mean(
                 [env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
@@ -366,60 +363,26 @@ def train(*,
         print(eval_score)
         # print('scores', np.array(agent._avg_scores))
         print('avg_scores', np.mean(agent._scores))
+=======
+        norm_score = np.mean([env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
+>>>>>>> cd0bcad20b957f35518b2ffc86ca412036bd2905
 
+        # Update and print Logger
         logger.log_kv('eval_score', eval_score)
-        logger.log_kv('norm_eval_score', norm_score)
+        logger.log_kv('eval_norm_score', norm_score)
         try:
             eval_metric = env.env.env.evaluate_success(eval_paths)
             logger.log_kv('eval_metric', eval_metric)
         except:
             pass
 
-
-        # # track best performing policy
-        # policy_score = eval_score if job_data['eval_rollouts'] > 0 else rollout_score
-        # if policy_score > best_perf:
-        #     # safe as policy network is clamped to CPU
-        #     best_policy = copy.deepcopy(policy)
-        #     best_perf = policy_score
-
         tf = timer.time()
         logger.log_kv('iter_time', tf-ts)
-        # for key in agent.logger.log.keys():
-        #     logger.log_kv(key, agent.logger.log[key][-1])
-        # print_data = sorted(filter(lambda v: np.asarray(v[1]).size == 1,
-        #                         logger.get_current_log_print().items()))
-        print_data = sorted(filter(lambda v: np.asarray(v[1]).size == 1,
-                                agent.logger.get_current_log_print().items()))
-
+        print_data = sorted(filter(lambda v: np.asarray(v[1]).size == 1, logger.get_current_log_print().items()))
         print(tabulate(print_data))
         logger.save_log(OUT_DIR+'/logs')
 
-        # if outer_iter > 0 and outer_iter % job_data['save_freq'] == 0:
-        #     # convert to CPU before pickling
-        #     agent.to('cpu')
-        #     # make observation mask part of policy for easy deployment in environment
-        #     old_in_scale = policy.in_scale
-        #     for pi in [policy, best_policy]:
-        #         pi.set_transformations(in_scale=1.0 / env.obs_mask)
-        #     pickle.dump(agent, open(OUT_DIR + '/iterations/agent_' +
-        #                 str(outer_iter) + '.pickle', 'wb'))
-        #     pickle.dump(policy, open(OUT_DIR + '/iterations/policy_' +
-        #                 str(outer_iter) + '.pickle', 'wb'))
-        #     pickle.dump(best_policy, open(
-        #         OUT_DIR + '/iterations/best_policy.pickle', 'wb'))
-        #     agent.to(job_data['device'])
-        #     for pi in [policy, best_policy]:
-        #         pi.set_transformations(in_scale=old_in_scale)
-        #     make_train_plots(log=logger.log, keys=['rollout_score', 'eval_score', 'rollout_metric', 'eval_metric'],
-        #                     x_scale=float(job_data['act_repeat']), y_scale=1.0, save_loc=OUT_DIR+'/logs/')
-
-    # # final save
-    # pickle.dump(agent, open(OUT_DIR + '/iterations/agent_final.pickle', 'wb'))
-    # policy.set_transformations(in_scale=1.0 / env.obs_mask)
-    # pickle.dump(policy, open(OUT_DIR + '/iterations/policy_final.pickle', 'wb'))
-
-    return best_perf
+    return norm_score
 
 if __name__=='__main__':
 
@@ -440,4 +403,4 @@ if __name__=='__main__':
         kwargs['job_data'] = job_data
         del kwargs['config']
 
-    train(**kwargs)
+    train(readonly=False, **kwargs)
