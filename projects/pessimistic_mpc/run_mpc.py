@@ -354,7 +354,6 @@ def train(*,
         eval_paths = evaluate_policy(agent.env, agent, None, noise_level=0.0,
                                      real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
         eval_score = np.mean([np.sum(p['rewards']) for p in eval_paths])
-<<<<<<< HEAD
         try:
             norm_score = np.mean(
                 [env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
@@ -363,9 +362,6 @@ def train(*,
         print(eval_score)
         # print('scores', np.array(agent._avg_scores))
         print('avg_scores', np.mean(agent._scores))
-=======
-        norm_score = np.mean([env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
->>>>>>> cd0bcad20b957f35518b2ffc86ca412036bd2905
 
         # Update and print Logger
         logger.log_kv('eval_score', eval_score)
