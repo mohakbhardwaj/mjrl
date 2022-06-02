@@ -158,9 +158,12 @@ def train(*,
 
 
     rollout_score = np.mean([np.sum(p['rewards']) for p in paths])
-    rollout_norm_score = np.mean([env.env.get_normalized_score(
-        np.sum(p['rewards'])) for p in paths])
-
+    try:
+        rollout_norm_score = np.mean([env.env.get_normalized_score(
+            np.sum(p['rewards'])) for p in paths])
+    except:
+        rollout_norm_score = 0.0
+        
     num_samples = np.sum([p['rewards'].shape[0] for p in paths])
     logger.log_kv('rollout_score', rollout_score)
     logger.log_kv('rollout_norm_score', rollout_norm_score)
@@ -229,8 +232,10 @@ def train(*,
         eval_metric_bc = 0.0
 
     #Get normalized score for bc
-    norm_score_bc = np.mean([ env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
-
+    try:
+        norm_score_bc = np.mean([ env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
+    except:
+        norm_score_bc = 0.0
     logger.log_kv('eval_score_bc', eval_score_bc)
     logger.log_kv('eval_metric_bc', eval_metric_bc)
     logger.log_kv('eval_norm_score_bc', norm_score_bc)
@@ -353,9 +358,11 @@ def train(*,
         eval_paths = evaluate_policy(agent.env, agent, None, noise_level=0.0,
                                     real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
         eval_score = np.mean([np.sum(p['rewards']) for p in eval_paths])
-        norm_score = np.mean(
-            [env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
-
+        try:
+            norm_score = np.mean(
+                [env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
+        except:
+            norm_score = 0.0
         print(eval_score)
         # print('scores', np.array(agent._avg_scores))
         print('avg_scores', np.mean(agent._scores))

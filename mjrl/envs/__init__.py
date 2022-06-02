@@ -30,15 +30,21 @@ register(
 
 register(
     id='pusher-v0',
-    entry_point='mjrl.envs:PusherEnv',
+    entry_point='mjrl.envs.sawyer:PusherEnv',
     max_episode_steps=50,
 )
 
 register(
-    id='pusher_randomize_goal-v0',
-    entry_point='mjrl.envs:PusherEnv',
+    id='pusher-v1',
+    entry_point='mjrl.envs.sawyer:PusherEnv',
     max_episode_steps=50,
     kwargs={'randomize_goal': True}
+)
+
+register(
+    id='peg_insertion-v0',
+    entry_point='mjrl.envs.sawyer:PegEnv',
+    max_episode_steps=50,
 )
 
 from mjrl.envs.mujoco_env import MujocoEnv
@@ -48,4 +54,4 @@ from mjrl.envs.point_mass import PointMassEnv
 from mjrl.envs.swimmer import SwimmerEnv
 from mjrl.envs.reacher_sawyer import Reacher7DOFEnv
 from mjrl.envs.peg_insertion_sawyer import PegEnv
-from mjrl.envs.pusher import PusherEnv
+from mjrl.envs.sawyer.pusher import PusherEnv

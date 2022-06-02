@@ -139,6 +139,10 @@ class PusherEnv(mujoco_env.MujocoEnv, utils.EzPickle):
     def get_body_com(self, body_name):
         return self.data.get_body_xpos(body_name)
 
+    def get_normalized_score(self, score):
+        if (self.ref_max_score is None) or (self.ref_min_score is None):
+            raise ValueError("Reference score not provided for env")
+        return (score - self.ref_min_score) / (self.ref_max_score - self.ref_min_score)
 
 
 
