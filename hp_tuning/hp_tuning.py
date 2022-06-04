@@ -18,7 +18,7 @@ azure_service='dilbertbatch' #'dilbertbatch' #'rdlbatches' # 'rdlbatches' # dilb
 code_paths = os.path.dirname(__file__)  # This file will be uploaded as rl_nexus/hp_tuning/hp_tuning.py
 method = 'rl_nexus.hp_tuning.hp_tuning.train' # so we can call the method below.
 
-def train(config, seed, modelpath, **job_data):
+def train(config, seed, modelpath, datapath, **job_data):
     """ config: path (relative to run_mpc.py) to the config file. A default job_data dict is loaded from this file.
         job_data: a dict that contains the hyperparameters to overwrite the default job_data.
     """
@@ -36,6 +36,7 @@ def train(config, seed, modelpath, **job_data):
 
     return train(job_data=job_data,
                  output='../results/exp_data',
+                 datapath=datapath,
                  modelpath=modelpath,
                  seed=seed)
 
@@ -45,13 +46,14 @@ def run(hp_tuning_mode='grid',
 
     hps_dict = {
         'config':['configs/d4rl_hopper_medium.txt'],
-        'mpc_params-horizon':[10, 20, 30],
+        'mpc_params-horizon':[20],
     }
 
 
     config = dict(
         seed='randint',
         modelpath='$datastore/pessimistic_mpc/cached_models',
+        datapath='$datastore/pessimistic_mpc/datasets',
         readonly=True,
     )
 
@@ -94,5 +96,5 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--hp_tuning_mode', type=str, default='grid')
-    parser.add_argument('--n_seeds_per_hp', type=int, default=3)
+    parser.add_argument('--n_seeds_per_hp', type=int, default=5)
     run(**vars(parser.parse_args()))
