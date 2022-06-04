@@ -112,13 +112,13 @@ class PMPPIAgent(AbstractMPCAgent):
         self.mean_action = self.mean_action.roll(-shift_steps, 1)
         if self.base_action == 'random':
             self.mean_action[:,-shift_steps:] = self.action_range * torch.rand(self.num_models, shift_steps, self.action_dim, device=self.device) + self.action_lows
-        elif self.base_action == 'null':
+        elif self.base_action == 'zero':
             self.mean_action[:,-shift_steps:].zero_()
         elif self.base_action == 'repeat':
             self.mean_action[:,-shift_steps:] = self.mean_action[:, -shift_steps - 1].unsqueeze(1).repeat(1,shift_steps,1)#clone()
         else:
             raise NotImplementedError(
-                "invalid option for base action during shift")
+                "invalid option {} for base action during shift".format(self.base_action))
 
     def optimize(self, observation):
         with torch.no_grad():  # since MPPI is derivative-free
