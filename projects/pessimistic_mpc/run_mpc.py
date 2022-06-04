@@ -230,6 +230,7 @@ def train(*,
     eval_paths = evaluate_policy(env, policy, None, noise_level=0.0, real_step=True,
                                  num_episodes=job_data['eval_rollouts'], visualize=False)
     eval_score_bc = np.mean([np.sum(p['rewards']) for p in eval_paths])
+    eval_score_bc_std = np.std([np.sum(p['rewards']) for p in eval_paths])
     print('BC', eval_score_bc)
     try:
         eval_metric_bc = env.env.env.evaluate_success(eval_paths)
@@ -239,11 +240,14 @@ def train(*,
     #Get normalized score for bc
     try:
         norm_score_bc = np.mean([ env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
+        norm_score_bc_std = np.std([ env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
     except:
         norm_score_bc = 0.0
     logger.log_kv('eval_score_bc', eval_score_bc)
+    logger.log_kv('eval_score_bc_std', eval_score_bc_std)
     logger.log_kv('eval_metric_bc', eval_metric_bc)
     logger.log_kv('eval_norm_score_bc', norm_score_bc)
+    logger.log_kv('eval_norm_score_bc_std', norm_score_bc_std)
     print_data = sorted(filter(lambda v: np.asarray(
         v[1]).size == 1, logger.get_current_log().items()))
     print(tabulate(print_data))
@@ -283,7 +287,6 @@ def train(*,
         pickle.dump(value_fn, open(job_data['init_val_fn'], 'wb'))
         vf_stats = dict(VF_error_before=error_before, VF_error_after=error_after, time_vf=time_vf)
         pickle.dump(vf_stats, open(MODEL_DIR + '/val_fn_train_info.pickle', 'wb'))
-        logger.log_kv('eval_score_bc', eval_score_bc)
 
     # ===============================================================================
     # Model Training
@@ -360,18 +363,25 @@ def train(*,
         eval_paths = evaluate_policy(agent.env, agent, None, noise_level=0.0,
                                      real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
         eval_score = np.mean([np.sum(p['rewards']) for p in eval_paths])
+        eval_score_std = np.std([np.sum(p['rewards']) for p in eval_paths])
+
         try:
             norm_score = np.mean(
                 [env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
+            norm_score_std = np.std(
+                [env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
         except:
             norm_score = 0.0
+            norm_score_std = 0.0
         print(eval_score)
         # print('scores', np.array(agent._avg_scores))
         print('avg_scores', np.mean(agent._scores))
 
         # Update and print Logger
         logger.log_kv('eval_score', eval_score)
+        logger.log_kv('eval_score_std', eval_score_std)
         logger.log_kv('eval_norm_score', norm_score)
+        logger.log_kv('eval_norm_score_std', norm_score_std)
         try:
             eval_metric = env.env.env.evaluate_success(eval_paths)
             logger.log_kv('eval_metric', eval_metric)
@@ -410,5 +420,4 @@ if __name__=='__main__':
             kwargs['job_data']['env_name'] = kwargs['env_name']
             del kwargs['env_name']
 
-    torch.cuda.set_per_process_memory_fraction(0.45)
     train(readonly=False, **kwargs)
