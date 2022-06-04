@@ -57,7 +57,7 @@ def train(*,
 
     OUT_DIR = os.path.join(output, ENV_NAME+'_'+str(SEED))
     MODEL_DIR = os.path.join(modelpath, ENV_NAME)
-    DATA_DIR = os.path.join(datapath, ENV_NAME)
+    DATA_DIR = datapath #   os.path.join(datapath, ENV_NAME)
 
     if not os.path.exists(output):
         os.makedirs(output)
@@ -102,7 +102,7 @@ def train(*,
 
     assert job_data['start_state'] in ['init', 'buffer']
     # assert 'data_file' in job_data.keys()
-    job_data['data_file'] = os.path.join(DATA_DIR, 'offline_data.pickle')
+    job_data['data_file'] = os.path.join(DATA_DIR, ENV_NAME+'.pickle')
     job_data['model_file'] = os.path.join(MODEL_DIR, 'ensemble_model.pickle')
     job_data['init_policy'] = os.path.join(MODEL_DIR, 'bc_policy.pickle')
     job_data['init_val_fn'] = os.path.join(MODEL_DIR, 'val_fn.pickle')
@@ -152,7 +152,7 @@ def train(*,
     try:
         paths = pickle.load(open(job_data['data_file'], 'rb'))
     except FileNotFoundError:
-        # if readonly: raise Exception('No cached model/data is found but the mode is read-only.')
+        if readonly: raise Exception('No cached model/data is found but the mode is read-only.')
         from prep_d4rl_dataset import prep_d4rl_dataset
         paths =  prep_d4rl_dataset(env_name=ENV_NAME,
                                 output=DATA_DIR,
@@ -397,6 +397,7 @@ if __name__=='__main__':
     parser.add_argument('--output', '-o', type=str,  default='exp_results', help='location to store results')
     # parser.add_argument('--include', '-i', type=str, required=False, help='package to import')
     parser.add_argument('--seed', '-s', type=int, default=None, help='seed')
+    parser.add_argument('--env_name', '-e', type=str, default=None)
     kwargs = {k:v for k,v in vars(parser.parse_args()).items() if v is not None}
 
     # Load config
@@ -405,4 +406,9 @@ if __name__=='__main__':
         kwargs['job_data'] = job_data
         del kwargs['config']
 
+        if 'env_name' in kwargs:
+            kwargs['job_data']['env_name'] = kwargs['env_name']
+            del kwargs['env_name']
+
+    torch.cuda.set_per_process_memory_fraction(0.45)
     train(readonly=False, **kwargs)
