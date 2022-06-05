@@ -79,6 +79,7 @@
 'pessimism_mode': 'atac', #'bonus', # truncation, bonus, discount
 'epsilon': 1.0,
 'filter_coeffs': [0.2, 0.8, 0.0],
+'sync_model_randomness': True,
 
 }
 
