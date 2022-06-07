@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from tqdm import tqdm
 
 
@@ -16,7 +17,6 @@ class WorldModel:
                  residual=True,
                  *args,
                  **kwargs,):
-
         self.state_dim, self.act_dim = state_dim, act_dim
         self.device, self.learn_reward = device, learn_reward
         if self.device == 'gpu' : self.device = 'cuda'
@@ -24,6 +24,7 @@ class WorldModel:
         self.dynamics_net = DynamicsNet(state_dim, act_dim, hidden_size, residual=residual, seed=seed).to(self.device)
         self.dynamics_net.set_transformations()  # in case device is different from default, it will set transforms correctly
         if activation == 'tanh' : self.dynamics_net.nonlinearity = torch.tanh
+        elif activation == 'swish': self.dynamics_net.nonlinearity = F.silu
         self.dynamics_opt = torch.optim.Adam(self.dynamics_net.parameters(), lr=fit_lr, weight_decay=fit_wd)
         self.dynamics_loss = torch.nn.MSELoss()
         # construct the reward model if necessary
@@ -32,6 +33,7 @@ class WorldModel:
             self.reward_net = RewardNet(state_dim, act_dim, hidden_size=(100, 100), seed=seed).to(self.device)
             self.reward_net.set_transformations()  # in case device is different from default, it will set transforms correctly
             if activation == 'tanh' : self.reward_net.nonlinearity = torch.tanh
+            elif activation == 'swish': self.reward_net.nonlinearity = F.silu
             self.reward_opt = torch.optim.Adam(self.reward_net.parameters(), lr=fit_lr, weight_decay=fit_wd)
             self.reward_loss = torch.nn.MSELoss()
         else:

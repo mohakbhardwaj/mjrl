@@ -2,6 +2,7 @@ from mjrl.algos.mbrl.nn_dynamics import WorldModel, DynamicsNet, RewardNet
 import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 from torch.nn.parameter import Parameter, UninitializedParameter
 
@@ -75,11 +76,13 @@ class EnsembleWorldModel(WorldModel):
                  residual=True,
                  *args,
                  **kwargs,):
-
         self.ensemble_size = ensemble_size
         super().__init__(state_dim, act_dim, learn_reward=learn_reward, hidden_size=hidden_size, seed=seed, fit_lr=fit_lr, fit_wd=fit_wd, device=device, activation=activation, *args, **kwargs)
         self.dynamics_net = EnsembleDynamicsNet(state_dim, act_dim, hidden_size=hidden_size, ensemble_size=ensemble_size, residual=residual, seed=seed).to(self.device)
         self.dynamics_net.set_transformations()  # in case device is different from default, it will set transforms correctly
+        if activation == 'tanh' : self.dynamics_net.nonlinearity = torch.tanh
+        elif activation == 'swish': self.dynamics_net.nonlinearity = F.silu
+
         self.dynamics_opt = torch.optim.Adam(self.dynamics_net.parameters(), lr=fit_lr, weight_decay=fit_wd)
 
     def fit_dynamics(slef, *args, **kwargs):

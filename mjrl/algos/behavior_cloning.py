@@ -119,10 +119,13 @@ class BC:
 
         # train loop
         for ep in config_tqdm(range(self.epochs), suppress_fit_tqdm):
-            for mb in range(int(num_samples / self.mb_size)):
-                rand_idx = np.random.choice(num_samples, size=self.mb_size)
+            rand_idx = np.random.permutation(num_samples) #.to(device)
+
+            for mb in range(int(num_samples // self.mb_size)):
+                # rand_idx = np.random.choice(num_samples, size=self.mb_size)
+                data_idx = rand_idx[mb*self.mb_size:(mb+1)*self.mb_size]
                 self.optimizer.zero_grad()
-                loss = self.loss(data, idx=rand_idx)
+                loss = self.loss(data, idx=data_idx)
                 loss.backward()
                 self.optimizer.step()
         params_after_opt = self.policy.get_param_values()
