@@ -36,11 +36,15 @@ from mjrl.algos.mpc.ensemble_nn_dynamics import batch_call
 from mjrl.algos.mpc.pretrain import train_dynamics_models
 from mjrl.algos.mpc.nn_value_fn import ValueFunctionNet
 from mjrl.utils.utils import import_from_path
+from mjrl.envs.env_utils import eval_success_robel
+torch.set_printoptions(precision=10)
+
 
 
 import os
 FILE_PATH = os.path.dirname(os.path.abspath(__file__))  # all paths specified are relative to this file
 
+            
 def train(*,
           job_data,
           output='exp_results',
@@ -116,19 +120,28 @@ def train(*,
     # ===============================================================================
     # Setup functions and environment
     # ===============================================================================
-
-    np.random.seed(SEED)
-    torch.random.manual_seed(SEED)
-
+    is_robel_env = False
+    
     if ENV_NAME.split('_')[0] == 'dmc':
         # import only if necessary (not part of package requirements)
         import dmc2gym
         backend, domain, task = ENV_NAME.split('_')
         env = dmc2gym.make(domain_name=domain, task_name=task, seed=SEED)
         env = GymEnv(env, act_repeat=job_data['act_repeat'])
+    elif ENV_NAME.split('-')[0] in ['sawyer', 'robel']:
+        splits = ENV_NAME.split('-')
+        if splits[0] == 'robel':
+            is_robel_env = True
+        splits.pop(-2)
+        ENV_NAME = "-".join(splits)
+        env = GymEnv(ENV_NAME, act_repeat=job_data['act_repeat'])
     else:
         env = GymEnv(ENV_NAME, act_repeat=job_data['act_repeat'])
-        env.set_seed(SEED)
+    
+    
+    np.random.seed(SEED)
+    torch.random.manual_seed(SEED)    
+    env.set_seed(SEED)
 
 
     # check for reward and termination functions

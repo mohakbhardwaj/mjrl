@@ -23,7 +23,11 @@ import pickle
 import argparse
 import numpy as np
 import torch
-
+try:
+    import robel
+    from mjrl.envs.env_utils import evaluate_success_robel
+except:
+    print('robel not found')
 # ===============================================================================
 # Get command line arguments
 # ===============================================================================
@@ -48,11 +52,24 @@ with open(args.config, 'r') as f:  # load config
 if args.include:
     exec("import "+args.include)  # import extra stuff
 ENV_NAME = job_data['env_name']
+
 if args.seed is not None: job_data['seed'] = args.seed
 SEED = job_data['seed']
 del(job_data['seed'])
 job_data['base_seed'] = SEED
 
+if ENV_NAME.split('-')[0] in ['sawyer', 'robel']:
+    splits = ENV_NAME.split('-')
+    # if splits[0] == 'robel'
+    splits.pop(-2)
+    ENV_NAME = "-".join(splits)
+    e = GymEnv(ENV_NAME, act_repeat=job_data['act_repeat'])
+else:
+    e = GymEnv(ENV_NAME)
+
+e.set_seed(SEED)
+e.action_space.seed(SEED)
+print(ENV_NAME)
 OUT_DIR = os.path.join(args.output, ENV_NAME+'_'+str(SEED))
 if not os.path.exists(args.output):
     os.mkdir(args.output)
@@ -89,9 +106,6 @@ else:
 np.random.seed(SEED)
 torch.random.manual_seed(SEED)
 
-e = GymEnv(job_data['env_name'])
-e.set_seed(SEED)
-e.action_space.seed(SEED)
 policy = MLP(e.spec, hidden_sizes=job_data['policy_size'],
              seed=SEED, init_log_std=job_data['init_log_std'],
              min_log_std=job_data['min_log_std'])

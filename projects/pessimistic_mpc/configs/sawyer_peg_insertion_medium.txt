@@ -2,7 +2,7 @@
 
 # general inputs
 
-'env_name'       :   'pusher-v1',
+'env_name'       :   'sawyer-peg-insertion-medium-v0',
 #'algorithm'     :   'NPG',
 'act_repeat'     :   1,
 'seed'           :   123,
@@ -10,12 +10,12 @@
 'eval_rollouts'  :   10,
 'num_models'     :   4,
 'sample_mode'    :   'trajectories',
-'save_freq'      :   100,
+'save_freq'      :   10,
 'device'         :   'cuda',
 'learn_reward'   :   False,
-'reward_file'    :   './utils/reward_functions/pusher.py',
+'reward_file'    :   './utils/reward_functions/peg_insertion.py',
 'pessimism_coef' :   10.0,  # 10.0
-'context_dim'    :   4,
+'context_dim'    :   3,
 #'truncate_reward' : 0.0,
 'exp_notes'      :   'Pessimistic MPC on pusher task',
 
@@ -43,7 +43,7 @@
 # RL parameters (all params related to PG, value function etc.)
 #'rl_num_samples     :   10000,
 'rl_num_traj'        :   200,
-'rl_num_iter'        :   1000,
+'rl_num_iter'        :   350,
 'num_cpu'            :   1,
 #'policy_size'       :   (256, 256),
 #'step_size'         :   0.05,
@@ -80,7 +80,7 @@
 
 'mpc_params': {
 'n_iters': 1,
-'horizon': 32, #20,
+'horizon': 20, #20,
 'num_particles': 100,
 #'init_std': 0.3162,
 'init_std': 0.1, 
@@ -95,8 +95,8 @@
 'shift_steps': 1,
 'squash_fn': 'clamp',
 'optimize_open_loop': True, 
-'pessimism_mode': 'bonus', # truncation, bonus, discount
-'epsilon': 0.005, 
+'pessimism_mode': 'atac', # truncation, bonus, discount
+'epsilon': 1.0, 
 'filter_coeffs': [0.2, 0.8, 0.0],
 
 }    

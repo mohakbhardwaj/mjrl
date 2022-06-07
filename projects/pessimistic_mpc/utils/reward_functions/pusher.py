@@ -24,10 +24,12 @@ def reward_function(paths):
 
     # reward_near = -torch.sum(torch.abs(vec_1), dim=-1)
     # reward_dist = -torch.sum(torch.abs(vec_2), dim=-1)
+    goal_dist = torch.norm(vec_2, dim=-1)
     reward_near = -torch.norm(vec_1, dim=-1)
-    reward_dist = -torch.norm(vec_2, dim=-1)
+    reward_dist = -goal_dist
     reward_ctrl = 0.0 #-torch.square(act).sum(axis=-1)
-    rewards = reward_dist + 0.1 * reward_ctrl + 0.5 * reward_near
+    bonus = 5.0 * (goal_dist < 0.05)
+    rewards = reward_dist + 0.1 * reward_ctrl + 0.5 * reward_near + bonus
 
     return rewards #if rewards.shape[0] > 1 else rewards.ravel()
 

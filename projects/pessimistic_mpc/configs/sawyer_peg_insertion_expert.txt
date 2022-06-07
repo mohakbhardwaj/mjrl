@@ -1,0 +1,105 @@
+{
+
+# general inputs
+
+'env_name'       :   'sawyer-peg-insertion-expert-v0',
+#'algorithm'     :   'NPG',
+'act_repeat'     :   1,
+'seed'           :   123,
+'num_iter'       :   1,
+'eval_rollouts'  :   10,
+'num_models'     :   4,
+'sample_mode'    :   'trajectories',
+'save_freq'      :   10,
+'device'         :   'cuda',
+'learn_reward'   :   False,
+'reward_file'    :   './utils/reward_functions/peg_insertion.py',
+'pessimism_coef' :   10.0,  # 10.0
+'context_dim'    :   3,
+#'truncate_reward' : 0.0,
+'exp_notes'      :   'Pessimistic MPC on pusher task',
+
+#behavior cloning
+'bc_epochs'     : 20,
+'bc_batch_size' : 256,
+'bc_lr'         : 1e-3,
+'bc_loss_type'  : 'MSE',
+
+
+# dynamics learning
+
+'hidden_size'   :   (512, 512),
+'activation'    :   'relu',
+'fit_lr'        :   1e-3,
+'fit_wd'        :   0.0,
+'fit_mb_size'   :   256,
+'fit_epochs'    :   25,
+'refresh_fit'   :   False,
+'max_steps'     :   1e8,
+'no_o_whitening':   True,
+'slackness'     :   0.1,
+'checkpoint_freq' : 1,
+
+# RL parameters (all params related to PG, value function etc.)
+#'rl_num_samples     :   10000,
+'rl_num_traj'        :   200,
+'rl_num_iter'        :   350,
+'num_cpu'            :   1,
+#'policy_size'       :   (256, 256),
+#'step_size'         :   0.05,
+#'init_log_std'      :   -0.25,
+#'min_log_std'       :   -1.0,
+#'gamma'             :   0.999,
+#'gae_lambda'        :   0.97,
+#'vf_hidden_size'    :   (128, 128),
+#'vf_batch_size'     :   256,
+#'vf_epochs'         :   1,
+#'vf_learn_rate'     :   1e-3,
+#'npg_hp'            :   dict(FIM_invert_args={'iters': 20, 'damping': 1e-3}),
+
+
+# NPG params
+
+'policy_size'   :   (512, 512),
+'step_size'     :   0.02,
+'init_log_std'  :   -0.25,
+'min_log_std'   :   -1.0,
+'gamma'         :   0.999,
+'gae_lambda'    :   0.97,
+'update_paths'  :   50,
+'start_state'   :   'init',
+'horizon'       :   700,
+'npg_hp'        :   dict(FIM_invert_args={'iters': 20, 'damping': 1e-3}),
+
+#Value function params
+'val_fn_size': (512, 512),
+'val_fn_lr': 1e-3,
+'val_fn_wd': 0.0,
+'val_fn_epochs': 25,
+'val_fn_batch_size': 256,
+
+'mpc_params': {
+'n_iters': 1,
+'horizon': 32, #20,
+'num_particles': 100,
+#'init_std': 0.3162,
+'init_std': 0.1, 
+'gamma': 0.999,
+'beta': 0.1, # 3.33
+'mixing_factor': 0.2,
+'td_lam': 0.97,
+'step_size_mean': 1.0,
+'sample_mode': 'best_mean',
+'base_action': 'repeat',
+'hotstart': True,
+'shift_steps': 1,
+'squash_fn': 'clamp',
+'optimize_open_loop': True, 
+'pessimism_mode': 'bonus', # truncation, bonus, discount
+'epsilon': 0.005, 
+'filter_coeffs': [0.2, 0.8, 0.0],
+
+}    
+
+}
+

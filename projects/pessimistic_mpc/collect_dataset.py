@@ -37,9 +37,9 @@ class RandomPolicy():
 
 def collect_dataset(*,
                     env_name,
-                    policy='random',
+                    policies=['random'],
                     output='datasets',
-                    num_samples=1e5,
+                    num_samples=1e6,
                     act_repeat=1,
                     include=None,
                     header=None,
@@ -49,8 +49,16 @@ def collect_dataset(*,
     if header:
         exec(header)
     SEED = seed
-    e = GymEnv(env_name)
-    act_repeat = act_repeat
+    ENV_NAME = env_name
+    if ENV_NAME.split('-')[0] in ['sawyer', 'robel']:
+        splits = ENV_NAME.split('-')
+        tag = splits.pop(-2)
+        ENV_NAME = "-".join(splits)
+        e = GymEnv(ENV_NAME, act_repeat=act_repeat)
+    else:
+        e = GymEnv(env_name)
+
+    
     np.random.seed(SEED)
     torch.random.manual_seed(SEED)
     e.set_seed(SEED)
@@ -59,26 +67,28 @@ def collect_dataset(*,
         mod = import_from_path(include, base_path=FILE_PATH)
         if 'obs_mask' in vars(mod):
             e.obs_mask = mod.obs_mask
+    raw_paths = []
+    
+    for policy in policies:
+        if policy == 'random':
+            policy = RandomPolicy(e.action_space.low, e.action_space.high)
+        else:   policy = pickle.load(open(policy, 'rb'))
 
-    if policy == 'random':
-        policy = RandomPolicy(e.action_space.low, e.action_space.high)
-    else:   policy = pickle.load(open(policy, 'rb'))
-    # raw_paths = sampler.sample_data_batch(num_samples=num_samples, env=e, policy=policy, eval_mode=False,
-                                        #   base_seed=SEED, num_cpu='max', paths_per_call='max')
-    raw_paths = evaluate_policy(e, policy, None, noise_level=0.0, real_step=True,
-                                 num_episodes=num_episodes, visualize=visualize)
+        raw_paths += evaluate_policy(e, policy, None, noise_level=0.0, real_step=True,
+                                    num_episodes=num_episodes, visualize=visualize)
 
-    # print some statistics
-    returns = np.array([np.sum(p['rewards']) for p in raw_paths])
-    num_samples = np.sum([p['rewards'].shape[0] for p in raw_paths])
-    try:
-        success_metric = e.env.env.evaluate_success(raw_paths)
-    except:
-        success_metric = 0.0
-    print("Number of samples collected = %i" % num_samples)
-    print("Collected trajectory return mean, std, min, max = %.2f , %.2f , %.2f, %.2f" %
-          (np.mean(returns), np.std(returns), np.min(returns), np.max(returns)))
-    print("Success metric = {}".format(success_metric))
+        # print some statistics
+        returns = np.array([np.sum(p['rewards']) for p in raw_paths])
+        num_samples = np.sum([p['rewards'].shape[0] for p in raw_paths])
+        try:
+            success_metric = e.env.env.evaluate_success(raw_paths)
+        except:
+            success_metric = 0.0
+        print("Number of samples collected = %i" % num_samples)
+        print("Collected trajectory return mean, std, min, max = %.2f , %.2f , %.2f, %.2f" %
+            (np.mean(returns), np.std(returns), np.min(returns), np.max(returns)))
+        print("Success metric = {}".format(success_metric))
+    
     # prepare trajectory dataset (scaling, transforms etc.)
     paths = []
     for p in raw_paths:
@@ -97,12 +107,15 @@ def collect_dataset(*,
         path['rewards'] = rew
         paths.append(path)
 
-    output_dir = output
+    output_dir = os.path.join(output, env_name)
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
+    # name, ver = env_name.split("-")
+    # pickle.dump(paths, open(os.path.join(
+        # output_dir, name+'-'+tag+'-'+ver+'.pickle'), 'wb'))
     pickle.dump(paths, open(os.path.join(
-        output_dir, env_name+'.pickle'), 'wb'))
-    
+        output_dir, 'offline_data.pickle'), 'wb'))
+        
     return paths
 
 
@@ -117,9 +130,9 @@ if __name__ == '__main__':
     parser.add_argument('--env_name', type=str,
                         required=True, help='environment ID')
     parser.add_argument('--output', type=str,  help='location to store data')
-    parser.add_argument('--policy', type=str,
+    parser.add_argument('--policies', type=str, nargs="+",
                         help='location of policy file for data collection')
-    parser.add_argument('--num_samples', type=int, default=1e5, 
+    parser.add_argument('--num_samples', type=int, default=1e6, 
                         help='number of samples to collect')
     parser.add_argument('--act_repeat', type=int,
                         help='action repeat, will average actions over the repeat')

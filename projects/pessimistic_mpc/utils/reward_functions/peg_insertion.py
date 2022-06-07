@@ -8,7 +8,7 @@ import numpy as np
 #                      1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
 #                      1.0, 1.0, 1.0, 1.0, 1.0])
 obs_mask = np.ones(20)
-
+# obs_mask[7:14] = 0.01
 
 def reward_function(paths):
     # path has two keys: observations and actions
@@ -17,18 +17,16 @@ def reward_function(paths):
     # path["rewards"] should have shape (num_models, num_traj, horizon)
     obs = paths["observations"]
     act = paths["actions"]  # .clip(-1.0, 1.0)
-    tip_pos = obs[:, :, :, -9:-6]
-    obj_pos = obs[:, :, :, -6:-3]
+    hand_pos = obs[:, :, :, -6:-3]
     goal_pos = obs[:, :, :, -3:]
-    vec_1 = obj_pos - tip_pos
-    vec_2 = obj_pos - goal_pos
+    disp = hand_pos - goal_pos
 
-    # reward_near = -torch.sum(torch.abs(vec_1), dim=-1)
+    l1_dist = torch.sum(torch.abs(disp), dim=-1)
+    l2_dist = torch.norm(disp, dim=-1)
+    bonus = 5.0 * (l2_dist < 0.06)
+
     # reward_dist = -torch.sum(torch.abs(vec_2), dim=-1)
-    reward_near = -torch.norm(vec_1, dim=-1)
-    reward_dist = -torch.norm(vec_2, dim=-1)
-    reward_ctrl = 0.0  # -torch.square(act).sum(axis=-1)
-    rewards = reward_dist + 0.1 * reward_ctrl + 0.5 * reward_near
+    rewards = -l1_dist - 5.0*l2_dist + bonus
 
     return rewards  # if rewards.shape[0] > 1 else rewards.ravel()
 

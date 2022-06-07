@@ -48,7 +48,7 @@ class PusherEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         if not self.randomize_goal:
             self.goal_pos = np.asarray([0., 0.])
         else:
-            self.goal_pos = self.np_random.uniform(low=-0.3, high=0.3, size=2)
+            self.goal_pos = self.np_random.uniform(low=-0.2, high=0.2, size=2)
 
         # self.cylinder_pos = np.array(
         #     [-0.25, 0.15]) + np.random.normal(0, 0.025, [2])

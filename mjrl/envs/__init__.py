@@ -28,21 +28,28 @@ register(
     max_episode_steps=50,
 )
 
+
 register(
-    id='pusher-v0',
+    id='reacher-v0',
+    entry_point='mjrl.envs.sawyer:ReacherEnv',
+    max_episode_steps=50,
+)
+
+register(
+    id='sawyer-pusher-v0',
     entry_point='mjrl.envs.sawyer:PusherEnv',
     max_episode_steps=50,
 )
 
 register(
-    id='pusher-v1',
+    id='sawyer-pusher-v1',
     entry_point='mjrl.envs.sawyer:PusherEnv',
     max_episode_steps=50,
     kwargs={'randomize_goal': True}
 )
 
 register(
-    id='peg_insertion-v0',
+    id='sawyer-peg-insertion-v0',
     entry_point='mjrl.envs.sawyer:PegEnv',
     max_episode_steps=50,
 )
