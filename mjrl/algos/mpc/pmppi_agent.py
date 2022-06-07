@@ -57,6 +57,7 @@ class PMPPIAgent(AbstractMPCAgent):
         self.optimize_open_loop = self.mpc_params['optimize_open_loop']
         self.pessimism_mode = self.mpc_params['pessimism_mode']
         self.epsilon = self.mpc_params['epsilon']
+        self.sync_model_randomness = self.mpc_params['sync_model_randomness']
 
         # atac
         self.actions_to_take = None
@@ -87,6 +88,8 @@ class PMPPIAgent(AbstractMPCAgent):
     def preprocess_and_reset(self, observation, infos=None, sample_zero_action=True):
         # Sample open-loop actions for subsequent rollouts
         eps = torch.randn(self.num_models, self.num_particles, self.horizon, self.action_dim, device=self.device)
+        if self.sync_model_randomness:
+            eps[:] = eps[0] # use the same perturbation for all model
         eps[:,0] = 0. # set first perturbation to be zeros
         self._open_loop_actions = self.mean_action.unsqueeze(1).repeat(1,self.num_particles, 1, 1) + self.init_std * eps
         if self.optimize_open_loop and sample_zero_action:
@@ -112,13 +115,13 @@ class PMPPIAgent(AbstractMPCAgent):
         self.mean_action = self.mean_action.roll(-shift_steps, 1)
         if self.base_action == 'random':
             self.mean_action[:,-shift_steps:] = self.action_range * torch.rand(self.num_models, shift_steps, self.action_dim, device=self.device) + self.action_lows
-        elif self.base_action == 'null':
+        elif self.base_action == 'zero':
             self.mean_action[:,-shift_steps:].zero_()
         elif self.base_action == 'repeat':
             self.mean_action[:,-shift_steps:] = self.mean_action[:, -shift_steps - 1].unsqueeze(1).repeat(1,shift_steps,1)#clone()
         else:
             raise NotImplementedError(
-                "invalid option for base action during shift")
+                "invalid option {} for base action during shift".format(self.base_action))
 
     def optimize(self, observation):
         with torch.no_grad():  # since MPPI is derivative-free

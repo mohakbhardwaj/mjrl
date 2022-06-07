@@ -10,7 +10,7 @@ import os
 # hp compute
 max_total_runs=2000
 n_concurrent_runs_per_node=1
-max_n_nodes=1
+max_n_nodes=10
 compute_target='azb-gpu'
 docker_image = 'mujoco'
 azure_service='dilbertbatch' #'dilbertbatch' #'rdlbatches' # 'rdlbatches' # dilbertbatch'
@@ -18,12 +18,12 @@ azure_service='dilbertbatch' #'dilbertbatch' #'rdlbatches' # 'rdlbatches' # dilb
 code_paths = os.path.dirname(__file__)  # This file will be uploaded as rl_nexus/hp_tuning/hp_tuning.py
 method = 'rl_nexus.hp_tuning.hp_tuning.train' # so we can call the method below.
 
-def train(config, seed, modelpath, **job_data):
+def train(config, seed, modelpath, datapath, readonly=True, **job_data):
     """ config: path (relative to run_mpc.py) to the config file. A default job_data dict is loaded from this file.
         job_data: a dict that contains the hyperparameters to overwrite the default job_data.
     """
     from rl_nexus.mjrl.projects.pessimistic_mpc.run_mpc import train
-    from rl_nexus.hp_tuning.utils import  parse_and_update_dict
+    from rl_nexus.hp_tuning_tools.utils import  parse_and_update_dict
     import os, sys
 
     # Load config
@@ -36,7 +36,9 @@ def train(config, seed, modelpath, **job_data):
 
     return train(job_data=job_data,
                  output='../results/exp_data',
+                 datapath=datapath,
                  modelpath=modelpath,
+                 readonly=readonly,
                  seed=seed)
 
 def run(hp_tuning_mode='grid',
@@ -45,13 +47,28 @@ def run(hp_tuning_mode='grid',
 
     hps_dict = {
         'config':['configs/d4rl_hopper_medium.txt'],
-        'mpc_params-horizon':[10, 20, 30],
+        'env_name': ['hopper-medium-v2'],
+        'mpc_params-horizon': [20, 40],
+        'mpc_params-init_std':[0.1, 0.01],
+        'mpc_params-td_lam':[0.97, 0.99],
+        'mpc_params-beta': [0.1, 1, 3.33, 5, 10],
+        'mpc_params-base_action':['repeat', 'zero'],
+        'mpc_params-epsilon':[0.1, 1, 5, 10],
     }
+
+    # hps_dict = {
+    #     'config':['configs/d4rl_halfcheetah_medium.txt'],
+    #     'env_name': ['halfcheetah-medium-v2', 'halfcheetah-expert-v2', 'halfcheetah-medium-expert-v2', 'halfcheetah-medium-replay-v2'],
+    #     'mpc_params-horizon':[20],
+    # }
+
 
 
     config = dict(
+        eval_rollouts=30,
         seed='randint',
         modelpath='$datastore/pessimistic_mpc/cached_models',
+        datapath='$datastore/pessimistic_mpc/datasets',
         readonly=True,
     )
 
@@ -94,5 +111,5 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--hp_tuning_mode', type=str, default='grid')
-    parser.add_argument('--n_seeds_per_hp', type=int, default=3)
+    parser.add_argument('--n_seeds_per_hp', type=int, default=1)
     run(**vars(parser.parse_args()))

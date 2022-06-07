@@ -61,7 +61,7 @@ def train(*,
 
     OUT_DIR = os.path.join(output, ENV_NAME+'_'+str(SEED))
     MODEL_DIR = os.path.join(modelpath, ENV_NAME)
-    DATA_DIR = os.path.join(datapath, ENV_NAME)
+    DATA_DIR = datapath #   os.path.join(datapath, ENV_NAME)
 
     if not os.path.exists(output):
         os.makedirs(output)
@@ -106,7 +106,7 @@ def train(*,
 
     assert job_data['start_state'] in ['init', 'buffer']
     # assert 'data_file' in job_data.keys()
-    job_data['data_file'] = os.path.join(DATA_DIR, 'offline_data.pickle')
+    job_data['data_file'] = os.path.join(DATA_DIR, ENV_NAME+'.pickle')
     job_data['model_file'] = os.path.join(MODEL_DIR, 'ensemble_model.pickle')
     job_data['init_policy'] = os.path.join(MODEL_DIR, 'bc_policy.pickle')
     job_data['init_val_fn'] = os.path.join(MODEL_DIR, 'val_fn.pickle')
@@ -166,7 +166,6 @@ def train(*,
         paths = pickle.load(open(job_data['data_file'], 'rb'))
     except FileNotFoundError:
         if readonly: raise Exception('No cached model/data is found but the mode is read-only.')
-
         from prep_d4rl_dataset import prep_d4rl_dataset
         paths =  prep_d4rl_dataset(env_name=ENV_NAME,
                                 output=DATA_DIR,
@@ -180,7 +179,7 @@ def train(*,
             np.sum(p['rewards'])) for p in paths])
     except:
         rollout_norm_score = 0.0
-        
+
     num_samples = np.sum([p['rewards'].shape[0] for p in paths])
     logger.log_kv('rollout_score', rollout_score)
     logger.log_kv('rollout_norm_score', rollout_norm_score)
@@ -206,10 +205,14 @@ def train(*,
             policy.min_log_std[:] = tensor_utils.tensorize(min_log_std)
             policy.set_param_values(policy.get_param_values())
 
-        bc_train_info = pickle.load(
-            open(os.path.join(MODEL_DIR, 'bc_train_info.pickle'), 'rb'))
-        logger.log_kv('BC_error_before', bc_train_info['BC_error_before'])
-        logger.log_kv('BC_error_after', bc_train_info['BC_error_after'])
+        try:
+            bc_train_info = pickle.load(
+                open(os.path.join(MODEL_DIR, 'bc_train_info.pickle'), 'rb'))
+            logger.log_kv('BC_error_before', bc_train_info['BC_error_before'])
+            logger.log_kv('BC_error_after', bc_train_info['BC_error_after'])
+        except FileNotFoundError:
+            pass
+
         print('Policy Loaded')
 
     except FileNotFoundError:
@@ -240,6 +243,7 @@ def train(*,
     eval_paths = evaluate_policy(env, policy, None, noise_level=0.0, real_step=True,
                                  num_episodes=job_data['eval_rollouts'], visualize=False)
     eval_score_bc = np.mean([np.sum(p['rewards']) for p in eval_paths])
+    eval_score_bc_std = np.std([np.sum(p['rewards']) for p in eval_paths])
     print('BC', eval_score_bc)
     try:
         eval_metric_bc = env.env.env.evaluate_success(eval_paths)
@@ -249,11 +253,14 @@ def train(*,
     #Get normalized score for bc
     try:
         norm_score_bc = np.mean([ env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
+        norm_score_bc_std = np.std([ env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
     except:
         norm_score_bc = 0.0
     logger.log_kv('eval_score_bc', eval_score_bc)
+    logger.log_kv('eval_score_bc_std', eval_score_bc_std)
     logger.log_kv('eval_metric_bc', eval_metric_bc)
     logger.log_kv('eval_norm_score_bc', norm_score_bc)
+    logger.log_kv('eval_norm_score_bc_std', norm_score_bc_std)
     print_data = sorted(filter(lambda v: np.asarray(
         v[1]).size == 1, logger.get_current_log().items()))
     print(tabulate(print_data))
@@ -265,10 +272,13 @@ def train(*,
     try:
         value_fn = pickle.load(open(job_data['init_val_fn'], 'rb'))
         # value_fn.set_params(value_fn.get_params())
-        val_fn_train_info = pickle.load(open(os.path.join(MODEL_DIR,'val_fn_train_info.pickle'), 'rb'))
-        logger.log_kv('time_VF', val_fn_train_info['time_vf'])
-        logger.log_kv('VF_error_before', val_fn_train_info['VF_error_before'])
-        logger.log_kv('VF_error_after', val_fn_train_info['VF_error_after'])
+        try:
+            val_fn_train_info = pickle.load(open(os.path.join(MODEL_DIR,'val_fn_train_info.pickle'), 'rb'))
+            logger.log_kv('time_VF', val_fn_train_info['time_vf'])
+            logger.log_kv('VF_error_before', val_fn_train_info['VF_error_before'])
+            logger.log_kv('VF_error_after', val_fn_train_info['VF_error_after'])
+        except FileNotFoundError:
+            pass
 
     except FileNotFoundError:
         if readonly: raise Exception('No cached model/data is found but the mode is read-only.')
@@ -290,7 +300,6 @@ def train(*,
         pickle.dump(value_fn, open(job_data['init_val_fn'], 'wb'))
         vf_stats = dict(VF_error_before=error_before, VF_error_after=error_after, time_vf=time_vf)
         pickle.dump(vf_stats, open(MODEL_DIR + '/val_fn_train_info.pickle', 'wb'))
-        logger.log_kv('eval_score_bc', eval_score_bc)
 
     # ===============================================================================
     # Model Training
@@ -367,18 +376,25 @@ def train(*,
         eval_paths = evaluate_policy(agent.env, agent, None, noise_level=0.0,
                                      real_step=True, num_episodes=job_data['eval_rollouts'], visualize=False)
         eval_score = np.mean([np.sum(p['rewards']) for p in eval_paths])
+        eval_score_std = np.std([np.sum(p['rewards']) for p in eval_paths])
+
         try:
             norm_score = np.mean(
                 [env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
+            norm_score_std = np.std(
+                [env.env.get_normalized_score(np.sum(p['rewards'])) for p in eval_paths])
         except:
             norm_score = 0.0
+            norm_score_std = 0.0
         print(eval_score)
         # print('scores', np.array(agent._avg_scores))
         print('avg_scores', np.mean(agent._scores))
 
         # Update and print Logger
         logger.log_kv('eval_score', eval_score)
+        logger.log_kv('eval_score_std', eval_score_std)
         logger.log_kv('eval_norm_score', norm_score)
+        logger.log_kv('eval_norm_score_std', norm_score_std)
         try:
             eval_metric = env.env.env.evaluate_success(eval_paths)
             logger.log_kv('eval_metric', eval_metric)
@@ -404,6 +420,7 @@ if __name__=='__main__':
     parser.add_argument('--output', '-o', type=str,  default='exp_results', help='location to store results')
     # parser.add_argument('--include', '-i', type=str, required=False, help='package to import')
     parser.add_argument('--seed', '-s', type=int, default=None, help='seed')
+    parser.add_argument('--env_name', '-e', type=str, default=None)
     kwargs = {k:v for k,v in vars(parser.parse_args()).items() if v is not None}
 
     # Load config
@@ -411,5 +428,9 @@ if __name__=='__main__':
         job_data = eval(f.read())
         kwargs['job_data'] = job_data
         del kwargs['config']
+
+        if 'env_name' in kwargs:
+            kwargs['job_data']['env_name'] = kwargs['env_name']
+            del kwargs['env_name']
 
     train(readonly=False, **kwargs)
