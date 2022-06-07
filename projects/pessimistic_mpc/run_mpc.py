@@ -107,6 +107,7 @@ def train(*,
     assert job_data['start_state'] in ['init', 'buffer']
     # assert 'data_file' in job_data.keys()
     job_data['data_file'] = os.path.join(DATA_DIR, ENV_NAME+'.pickle')
+    #job_data['model_file'] = os.path.join(MODEL_DIR, 'ensemble_model_'+str(job_data['num_models'])+'.pickle')
     job_data['model_file'] = os.path.join(MODEL_DIR, 'ensemble_model.pickle')
     job_data['init_policy'] = os.path.join(MODEL_DIR, 'bc_policy.pickle')
     job_data['init_val_fn'] = os.path.join(MODEL_DIR, 'val_fn.pickle')

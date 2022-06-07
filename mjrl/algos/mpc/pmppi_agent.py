@@ -197,9 +197,32 @@ class PMPPIAgent(AbstractMPCAgent):
 
 
     def update_policy(self, observation, paths, infos=None):
+
+        if self.pessimism_mode=='atac2':
+            assert self.sync_model_randomness
+            assert self.optimize_open_loop
+            assert self.optimization_freq==1
+            base_disc_return = paths["discounted_return"][:,0:1]  # assume the first action is mean
+            new_mean_disc_return = paths["discounted_return"] # models x policies
+            val_diff = new_mean_disc_return - base_disc_return  # model x particles
+            obj, _ = val_diff.min(axis=0)
+            # obj = val_diff.mean(axis=0) - 3*val_diff.std(axis=0)
+            ind = obj>= self.epsilon  # throw away impossible ones
+            if sum(ind)>0:
+                print(sum(ind))
+                obj = obj.unsqueeze(0)
+                w = torch.softmax((1.0/self.beta) * obj[:,ind], dim=-1)
+                actions = paths['open_loop_actions'][:,ind]
+                # assert torch.norm((actions[:,0]-self.mean_action))<1e-10  # assume the first action is mean
+                weighted_seq = w[:,:,None,None] * actions
+                new_mean = torch.sum(weighted_seq, dim=1)  # over particles
+                new_mean = (1.0 - self.step_size_mean) * self.mean_action + self.step_size_mean * new_mean  # generate candidates
+                self.mean_action = new_mean
+            scores, _ = torch.max(paths["discounted_return"], dim=1)  # over particles
+            return scores
+
         actions = paths['open_loop_actions'] if self.optimize_open_loop else paths['actions']
         w = torch.softmax((1.0/self.beta) * paths["discounted_return"], dim=-1)
-
         # Update mean
         weighted_seq = w[:,:,None,None] * actions
         new_mean = torch.sum(weighted_seq, dim=1)  # over particles
