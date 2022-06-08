@@ -107,7 +107,7 @@ class PMPPIAgent(AbstractMPCAgent):
             self.reset_distribution()
 
     def reset_distribution(self):
-        self.num_means = 1 if self.pessimism_mode == 'atac' else self.num_models
+        self.num_means = 1 if self.pessimism_mode in ['atac','atac2', 'atac3'] else self.num_models
         self.mean_action = torch.zeros((self.num_means, self.horizon, self.action_dim), device=self.device)
         self.std_action = torch.tensor(self.init_std, device=self.device)
 
@@ -208,17 +208,20 @@ class PMPPIAgent(AbstractMPCAgent):
             obj, _ = val_diff.min(axis=0)
             # obj = val_diff.mean(axis=0) - 3*val_diff.std(axis=0)
             ind = obj>= self.epsilon  # throw away impossible ones
+
             if sum(ind)>0:
                 print(sum(ind))
-                obj = obj.unsqueeze(0)
-                w = torch.softmax((1.0/self.beta) * obj[:,ind], dim=-1)
-                actions = paths['open_loop_actions'][:,ind]
+                # obj = obj.unsqueeze(0)
+                w = torch.softmax((1.0/self.beta) * obj[ind], dim=-1)
+                actions = paths['open_loop_actions'][0,ind] #take any model_idx as sync_randomness is true
                 # assert torch.norm((actions[:,0]-self.mean_action))<1e-10  # assume the first action is mean
-                weighted_seq = w[:,:,None,None] * actions
-                new_mean = torch.sum(weighted_seq, dim=1)  # over particles
+                weighted_seq = w[:,None,None] * actions
+                new_mean = torch.sum(weighted_seq, dim=0).unsqueeze(0)  # over particles
                 new_mean = (1.0 - self.step_size_mean) * self.mean_action + self.step_size_mean * new_mean  # generate candidates
                 self.mean_action = new_mean
             scores, _ = torch.max(paths["discounted_return"], dim=1)  # over particles
+            paths_new = self.evaluate_action_sequence(observation, self.mean_action.unsqueeze(0).repeat(self.num_models,1,1,1))  # for each mean, roll for all the models.
+            self.actions_to_take = paths_new["actions"][0,0]
             return scores
 
         actions = paths['open_loop_actions'] if self.optimize_open_loop else paths['actions']
@@ -239,6 +242,7 @@ class PMPPIAgent(AbstractMPCAgent):
             base_disc_return = paths_new["discounted_return"][:,-1:]
             # compute pessimistic value difference
             pessimistic_val_diff, _ = (new_mean_disc_return - base_disc_return).min(axis=0)
+            assert pessimistic_val_diff.shape[0] == 5, pessimistic_val_diff.shape
             # select mean with max value difference
             max_perf_gap, max_policy_idx = torch.max(pessimistic_val_diff, dim=0)
             # check whether to accept the candidate
@@ -248,6 +252,46 @@ class PMPPIAgent(AbstractMPCAgent):
                 new_mean = self.mean_action
                 max_policy_idx = -1
             self.actions_to_take = paths_new['actions'][0, max_policy_idx]  # since we take only the first action, the model index 0 doesn't matter.
+        
+        if self.pessimism_mode == "atac3":
+            #combine atac and atac2
+            assert self.sync_model_randomness
+            assert self.optimize_open_loop
+            assert self.optimization_freq==1
+
+            all_means = torch.cat([new_mean, self.mean_action])
+            # all_candidates = torch.cat([candidate_actions, new_mean, self.mean_action])
+
+            paths_new = self.evaluate_action_sequence(observation, all_means.unsqueeze(0).repeat(self.num_models,1,1,1))  # for each mean, roll for all the models.
+            new_mean_disc_return = paths_new["discounted_return"][:,:-1] # models x policies
+            base_disc_return = paths_new["discounted_return"][:,-1:]
+            # compute pessimistic value difference
+            pessimistic_val_diff, _ = (new_mean_disc_return - base_disc_return).min(axis=0)
+            # assert pessimistic_val_diff.shape[0] == 5, "{}, {}, {}, {}, {}".format(pessimistic_val_diff, new_mean_disc_return.shape, base_disc_return.shape, new_mean.shape, self.mean_action.shape)
+            # if pessimistic_val_diff.shape[0] > 5:
+            #     import pdb
+            #     pdb.set_trace()
+
+            #compute pessimistic val difference for rollout actions
+            rollouts_pess_val_diff, _ = (paths["discounted_return"][:,1:] - base_disc_return).min(axis=0)
+            
+            # all_val_diffs = torch.cat([pessimistic_val_diff, rollouts_pess_val_diff])
+            # all_candidates = torch.cat([new_mean, paths['open_loop_actions'][0,1:]])
+            # all_actions = torch.cat([paths_new['actions'], paths['actions'][:,1:]], dim=1)
+            all_val_diffs = pessimistic_val_diff
+            all_candidates = new_mean
+            all_actions = paths_new['actions']
+
+            # print(all_val_diffs.shape, all_candidates.shape, pessimistic_val_diff.shape, rollouts_pess_val_diff.shape)
+            # select mean with max value difference
+            max_perf_gap, max_policy_idx = torch.max(all_val_diffs, dim=0)
+            # check whether to accept the candidate
+            if max_perf_gap.item() >= self.epsilon:
+                new_mean = all_candidates[max_policy_idx].unsqueeze(0)
+            else:
+                new_mean = self.mean_action
+                max_policy_idx = -1
+            self.actions_to_take = all_actions[0, max_policy_idx]  # since we take only the first action, the model index 0 doesn't matter.
 
         self.mean_action = new_mean
         scores, _ = torch.max(paths["discounted_return"], dim=1)  # over particles
@@ -258,7 +302,7 @@ class PMPPIAgent(AbstractMPCAgent):
         mode = self.sample_mode
         score = infos[-1].cpu().numpy() # TODO
 
-        if self.pessimism_mode == 'atac':
+        if self.pessimism_mode in ['atac', 'atac2', 'atac3']:
             return self.actions_to_take, score
         if mode == 'best_mean':
             paths = self.evaluate_action_sequence(observation, self.mean_action.unsqueeze(1))

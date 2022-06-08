@@ -76,7 +76,7 @@
 'shift_steps': 1,
 'squash_fn': 'clamp',
 'optimize_open_loop': True, # False, True
-'pessimism_mode': 'atac', #'bonus', # truncation, bonus, discount
+'pessimism_mode': 'atac3', #'bonus', # truncation, bonus, discount
 'epsilon': 1.0,
 'filter_coeffs': [0.2, 0.8, 0.0],
 'sync_model_randomness': True,
